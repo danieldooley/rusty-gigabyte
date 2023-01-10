@@ -389,7 +389,7 @@ impl CPU {
         Add the signed value e8 to SP
      */
     fn add_sp_e8(&mut self) -> u8 {
-        let e8 = self.mmu.rsb(self.reg_pc);
+        let e8 = self.mmu.rb(self.reg_pc) as i8;
         self.reg_pc += 1;
 
         let (res, carry) = self.reg_sp.overflowing_add_signed(e8 as i16);
@@ -1860,7 +1860,7 @@ impl CPU {
         Add the signed value e8 to SP and store in HL
      */
     fn ld_hl_spe8(&mut self) -> u8 {
-        let e8 = self.mmu.rsb(self.reg_pc);
+        let e8 = self.mmu.rb(self.reg_pc) as i8;
         self.reg_pc += 1;
 
         let (res, carry) = self.reg_sp.overflowing_add_signed(e8 as i16);
@@ -1976,7 +1976,7 @@ impl CPU {
         This seems to me that it should be jr_e8
      */
     fn jr_n16(&mut self) -> u8 {
-        let e8 = self.mmu.rsb(self.reg_pc);
+        let e8 = self.mmu.rb(self.reg_pc) as i8;
         self.reg_pc += 1;
 
         self.reg_pc = self.reg_pc.wrapping_add_signed(e8 as i16); // TODO: Should this wrap?
@@ -1998,7 +1998,7 @@ impl CPU {
         };
 
         if should {
-            let e8 = self.mmu.rsb(self.reg_pc);
+            let e8 = self.mmu.rb(self.reg_pc) as i8;
             self.reg_pc += 1;
 
             self.reg_pc = self.reg_pc.wrapping_add_signed(e8 as i16); // TODO: Should this wrap?
