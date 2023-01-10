@@ -1,16 +1,28 @@
-use crate::cpu::new_cpu;
-use crate::mmu::new_mmu;
+use std::thread;
 
-mod cartridge;
-mod cpu;
-mod mmu;
+use gameboy::cartridge::new_cartridge_from_file;
+use gameboy::start_game_boy;
+use speedy2d::Window;
 
-fn main() {
+use crate::window::GBWindowHandler;
+
+mod window;
+mod gameboy;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Initialising CPU");
 
-    let mmu = new_mmu();
+    let cart = new_cartridge_from_file("roms/cpu_instrs/cpu_instrs.gb")?;
 
-    let mut cpu = new_cpu(mmu);
+    // spawn a thread for the gameboy
+    thread::spawn(move || {
+        start_game_boy(cart);
+    });
 
-    cpu.exec();
+    // Window needs to run on the main thread.
+    let window = Window::<()>::new_centered("Rusty GB", (160, 144))?;
+
+    window.run_loop(GBWindowHandler {});
+
+    Ok(())
 }
