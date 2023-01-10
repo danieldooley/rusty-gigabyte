@@ -1,3 +1,7 @@
+use std::sync::mpsc::Sender;
+use std::thread::sleep;
+use std::time::{Duration, SystemTime};
+
 use crate::gameboy::cartridge::Cartridge;
 use crate::gameboy::cpu::new_cpu;
 use crate::gameboy::gpu::new_gpu;
@@ -8,14 +12,20 @@ mod cpu;
 mod mmu;
 mod gpu;
 
-pub fn start_game_boy(cart: Cartridge) {
+pub fn start_game_boy(cart: Cartridge, image_sender: Sender<Vec<u8>>) {
     let mut mmu = new_mmu(cart);
 
     let mut cpu = new_cpu();
-    let mut gpu = new_gpu();
+    let mut gpu = new_gpu(image_sender);
+
+    let target_frame_time = Duration::from_millis(1000 / 60);
 
     loop {
-        /*
+        let mut fclk = 70224; // 70224 cycles per frame
+        let start = SystemTime::now();
+
+        while fclk > 0 {
+            /*
             Originally I wrote the CPU to contain MMU when it was constructed.
 
             Of course, both the CPU and GPU need access to the MMU. On top of this
@@ -38,7 +48,18 @@ pub fn start_game_boy(cart: Cartridge) {
             compile time. This means that if the code in the future is refactored it may compile
             but actually contain the possibility of panicking.
          */
-        let (_, delta_t) = cpu.exec(&mut mmu);
-        gpu.step(&mut mmu, delta_t);
+            let (_, delta_t) = cpu.exec(&mut mmu);
+            gpu.step(&mut mmu, delta_t);
+
+            fclk -= delta_t as i32;
+        }
+
+        let frame_time = SystemTime::now().duration_since(start).unwrap();
+
+        if frame_time < target_frame_time {
+            sleep(target_frame_time - frame_time)
+        } else {
+            eprintln!("slow frame: {}ms", frame_time.as_millis())
+        }
     }
 }

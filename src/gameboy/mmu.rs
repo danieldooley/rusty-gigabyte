@@ -116,7 +116,7 @@ impl MMU {
                     }
                     0x0E00 => {
                         if addr < 0xFEA0 {
-                            return self.s_info[addr as usize - 0xFEFF];
+                            return self.s_info[addr as usize - 0xFE00];
                         }
 
                         0 // Only 160 bytes should actually be addressable
@@ -184,6 +184,7 @@ impl MMU {
                     0x0F00 => {
                         if addr < 0xFF80 {
                             // TODO: Implement IO?
+                            return;
                         }
 
                         self.z_ram[addr as usize - 0xFF80] = val

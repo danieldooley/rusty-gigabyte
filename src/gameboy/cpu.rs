@@ -160,8 +160,7 @@ impl CPU {
      */
     pub fn exec(&mut self, mmu: &mut MMU) -> (u32, u32) {
         let opc = mmu.rb(self.reg_pc);
-        self.reg_pc += 1;
-        //TODO: Wrap program counter?
+        self.reg_pc = self.reg_pc.wrapping_add(1);
 
         let cycles = self.map_and_execute(mmu, opc) as u32;
         let cycles_t = cycles * 4;
@@ -1635,7 +1634,7 @@ impl CPU {
             R8::L => self.reg_l,
         };
 
-        mmu.wb((self.reg_h as u16) << 8 + (self.reg_l as u16), val);
+        mmu.wb(((self.reg_h as u16) << 8) + (self.reg_l as u16), val);
 
         2
     }
@@ -1790,7 +1789,7 @@ impl CPU {
     fn ld_hld_a(&mut self, mmu: &mut MMU) -> u8 {
         let val = self.reg_a;
 
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
 
         mmu.wb(addr, val);
 
