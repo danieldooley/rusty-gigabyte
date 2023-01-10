@@ -1,10 +1,6 @@
 use std::error::Error;
 use std::fs;
 
-struct Cartridge ();
+struct Cartridge();
 
-impl Cartridge {
-
-    
-
-}
+impl Cartridge {}

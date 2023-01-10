@@ -86,14 +86,14 @@ impl MMU {
                     }
                     0x0E00 => {
                         if addr < 0xFEA0 {
-                            return self.s_info[addr as usize - 0xFEFF]
+                            return self.s_info[addr as usize - 0xFEFF];
                         }
 
                         0 // Only 160 bytes should actually be addressable
                     }
                     0x0F00 => {
                         if addr < 0xFF80 {
-                            return 0 // TODO: Implement IO?
+                            return 0; // TODO: Implement IO?
                         }
 
                         self.z_ram[addr as usize - 0xFF80]
@@ -163,7 +163,6 @@ impl MMU {
             }
             _ => panic!("unmapped memory at {:#06x}", addr) // I'm pretty sure these won't happen, rust just isn't able to determine that the above is exhaustive
         }
-
     }
 
     /*
@@ -171,6 +170,6 @@ impl MMU {
      */
     pub fn ww(&mut self, addr: u16, val: u16) {
         self.wb(addr, val as u8);
-        self.wb(addr+1, (val >> 8) as u8)
+        self.wb(addr + 1, (val >> 8) as u8)
     }
 }

@@ -1,9 +1,9 @@
+use crate::cpu::new_cpu;
+use crate::mmu::new_mmu;
+
 mod cartridge;
 mod cpu;
 mod mmu;
-
-use crate::mmu::new_mmu;
-use crate::cpu::new_cpu;
 
 fn main() {
     println!("Initialising CPU");

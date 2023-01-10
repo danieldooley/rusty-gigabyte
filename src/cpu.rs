@@ -77,7 +77,8 @@ const FLAG_CARRY: u8 = 0x10;
 
 pub struct CPU {
     // clocks
-    clock_m: u32, // should be t divided by 4
+    clock_m: u32,
+    // should be t divided by 4
     clock_t: u32,
 
     // 8 bit registers
@@ -166,7 +167,7 @@ impl CPU {
         let cycles = self.map_and_execute(opc) as u32;
 
         self.clock_m += cycles;
-        self.clock_t += cycles*4;
+        self.clock_t += cycles * 4;
     }
 
     /*
@@ -1691,7 +1692,7 @@ impl CPU {
     fn ld_a_mn16(&mut self) -> u8 {
         self.reg_a = self.mmu.rb(self.reg_pc);
         self.reg_pc += 1;
-        
+
         2
     }
 
@@ -2538,7 +2539,7 @@ impl CPU {
             0xFF => self.rst(RST::RST38),
         }
     }
-    
+
     /*
         I think this is seperate because the opcode CB has a following byte with more opcodes
      */
@@ -2556,7 +2557,7 @@ impl CPU {
 
         let opc = self.mmu.rb(self.reg_pc);
         self.reg_pc += 1;
-        
+
         match opc {
             0x00 => self.rlc_r8(R8::B),
             0x01 => self.rlc_r8(R8::C),
