@@ -10,5 +10,7 @@ fn main() {
 
     let mmu = new_mmu();
 
-    let cpu = new_cpu(mmu);
+    let mut cpu = new_cpu(mmu);
+
+    cpu.exec();
 }
