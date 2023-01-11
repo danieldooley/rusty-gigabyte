@@ -1,3 +1,4 @@
+use crate::gameboy::mmu;
 use crate::gameboy::mmu::MMU;
 
 /*
@@ -70,9 +71,27 @@ impl Into<u16> for RST {
     }
 }
 
+enum SetFlag {
+    LEAVE,
+    // Leave current value
+    ON,
+    // Set flag
+    OFF, // Unset flag
+}
+
+impl From<bool> for SetFlag {
+    fn from(value: bool) -> Self {
+        if value {
+            SetFlag::ON
+        } else {
+            SetFlag::OFF
+        }
+    }
+}
+
 const FLAG_ZERO: u8 = 0x80;
 const FLAG_SUB: u8 = 0x40;
-// const FLAG_HALF_CARRY: u8 = 0x20;
+const FLAG_HALF_CARRY: u8 = 0x20;
 const FLAG_CARRY: u8 = 0x10;
 
 pub struct CPU {
@@ -109,22 +128,42 @@ pub struct CPU {
 }
 
 pub fn new_cpu() -> CPU {
-    CPU {
-        clock_m: 0,
-        clock_t: 0,
-        reg_a: 0,
-        reg_b: 0,
-        reg_c: 0,
-        reg_d: 0,
-        reg_e: 0,
-        reg_f: 0,
-        reg_h: 0,
-        reg_l: 0,
-        reg_pc: 0,
-        reg_sp: 0,
-        ime: false,
-        halt: false,
-        stop: false,
+    if mmu::DEBUG_GB_DOCTOR {
+        CPU { // For use with: https://github.com/robert/gameboy-doctor
+            clock_m: 0,
+            clock_t: 0,
+            reg_a: 0x01,
+            reg_b: 0x00,
+            reg_c: 0x13,
+            reg_d: 0x00,
+            reg_e: 0xD8,
+            reg_f: 0xB0,
+            reg_h: 0x01,
+            reg_l: 0x4D,
+            reg_pc: 0x0100,
+            reg_sp: 0xFFFE,
+            ime: false,
+            halt: false,
+            stop: false,
+        }
+    } else {
+        CPU {
+            clock_m: 0,
+            clock_t: 0,
+            reg_a: 0,
+            reg_b: 0,
+            reg_c: 0,
+            reg_d: 0,
+            reg_e: 0,
+            reg_f: 0,
+            reg_h: 0,
+            reg_l: 0,
+            reg_pc: 0,
+            reg_sp: 0,
+            ime: false,
+            halt: false,
+            stop: false,
+        }
     }
 }
 
@@ -160,6 +199,12 @@ impl CPU {
      */
     pub fn exec(&mut self, mmu: &mut MMU) -> (u32, u32) {
         let opc = mmu.rb(self.reg_pc);
+
+        if mmu::DEBUG_GB_DOCTOR {
+            println!("A:{:02X} F:{:02X} B:{:02X} C:{:02X} D:{:02X} E:{:02X} H:{:02X} L:{:02X} SP:{:04X} PC:{:04X} PCMEM:{:02X},{:02X},{:02X},{:02X}",
+                     self.reg_a, self.reg_f, self.reg_b, self.reg_c, self.reg_d, self.reg_e, self.reg_h, self.reg_l, self.reg_sp, self.reg_pc, mmu.rb(self.reg_pc), mmu.rb(self.reg_pc + 1), mmu.rb(self.reg_pc + 2), mmu.rb(self.reg_pc + 3))
+        }
+
         self.reg_pc = self.reg_pc.wrapping_add(1);
 
         let cycles = self.map_and_execute(mmu, opc) as u32;
@@ -176,40 +221,50 @@ impl CPU {
         Utilities
         #########
      */
-    // fn set_m_cycles(&mut self, cycles: u8) {
-    //     self.reg_m = cycles;
-    //     self.reg_t = cycles * 4;
-    // }
 
-    fn set_flags_u8(&mut self, val: u8, carry: bool, sub: bool) {
-        self.reg_f = 0; // Reset flags
+    fn set_flags_u8(&mut self, val: u8, carry: SetFlag, half_carry: SetFlag, sub: SetFlag) {
+        // self.reg_f = 0; // Reset flags
         if val == 0 {
             self.reg_f |= FLAG_ZERO
+        } else {
+            self.reg_f &= !FLAG_ZERO
         }
 
-        if carry {
-            self.reg_f |= FLAG_CARRY
+        match carry {
+            SetFlag::LEAVE => {}
+            SetFlag::ON => self.reg_f |= FLAG_CARRY,
+            SetFlag::OFF => self.reg_f &= !FLAG_CARRY,
         }
 
-        if sub {
-            self.reg_f |= FLAG_SUB
+        match half_carry {
+            SetFlag::LEAVE => {}
+            SetFlag::ON => self.reg_f |= FLAG_HALF_CARRY,
+            SetFlag::OFF => self.reg_f &= !FLAG_HALF_CARRY,
         }
 
-        // TODO: Half Carries?
+        match sub {
+            SetFlag::LEAVE => {}
+            SetFlag::ON => self.reg_f |= FLAG_SUB,
+            SetFlag::OFF => self.reg_f &= !FLAG_SUB,
+        }
     }
 
-    fn set_flags_u16(&mut self, val: u16, carry: bool, sub: bool) {
+    fn set_flags_u16(&mut self, val: u16, carry: SetFlag, sub: SetFlag) {
         self.reg_f = 0; // Reset flags
         if val == 0 {
             self.reg_f |= FLAG_ZERO
         }
 
-        if carry {
-            self.reg_f |= FLAG_CARRY
+        match carry {
+            SetFlag::LEAVE => {}
+            SetFlag::ON => self.reg_f |= FLAG_CARRY,
+            SetFlag::OFF => self.reg_f &= !FLAG_CARRY,
         }
 
-        if sub {
-            self.reg_f |= FLAG_SUB
+        match sub {
+            SetFlag::LEAVE => {}
+            SetFlag::ON => self.reg_f |= FLAG_SUB,
+            SetFlag::OFF => self.reg_f &= !FLAG_SUB,
         }
 
         // TODO: Half Carries?
@@ -247,7 +302,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(self.reg_a, carry, false);
+        self.set_flags_u8(self.reg_a, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::OFF);
 
         1
     }
@@ -256,7 +311,7 @@ impl CPU {
         Add the value in address HL plus the carry flag to A
     */
     fn adc_a_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let (mut res, mut carry) = self.reg_a.overflowing_add(val);
@@ -269,7 +324,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(self.reg_a, carry, false);
+        self.set_flags_u8(self.reg_a, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -291,7 +346,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(self.reg_a, carry, false);
+        self.set_flags_u8(self.reg_a, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -314,7 +369,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(self.reg_a, carry, false);
+        self.set_flags_u8(self.reg_a, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::OFF);
 
         1
     }
@@ -323,14 +378,14 @@ impl CPU {
         Add the value at address HL to A
      */
     fn add_a_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let (res, carry) = self.reg_a.overflowing_add(val);
 
         self.reg_a = res;
 
-        self.set_flags_u8(self.reg_a, carry, false);
+        self.set_flags_u8(self.reg_a, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -346,7 +401,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(self.reg_a, carry, false);
+        self.set_flags_u8(self.reg_a, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -356,17 +411,17 @@ impl CPU {
      */
     fn add_hl_r16(&mut self, r: R16) -> u8 {
         let val = match r {
-            R16::BC => (self.reg_b as u16) << 8 + (self.reg_c as u16),
-            R16::DE => (self.reg_d as u16) << 8 + (self.reg_e as u16),
-            R16::HL => (self.reg_h as u16) << 8 + (self.reg_l as u16),
+            R16::BC => ((self.reg_b as u16) << 8) + (self.reg_c as u16),
+            R16::DE => ((self.reg_d as u16) << 8) + (self.reg_e as u16),
+            R16::HL => ((self.reg_h as u16) << 8) + (self.reg_l as u16),
         };
 
-        let (res, carry) = ((self.reg_h as u16) << 8 + (self.reg_l as u16)).overflowing_add(val);
+        let (res, carry) = (((self.reg_h as u16) << 8) + (self.reg_l as u16)).overflowing_add(val);
 
         self.reg_h = ((res as u16) >> 8) as u8;
         self.reg_l = res as u8;
 
-        self.set_flags_u16(res, carry, false);
+        self.set_flags_u16(res, SetFlag::from(carry), SetFlag::OFF);
 
         2
     }
@@ -377,12 +432,12 @@ impl CPU {
     fn add_hl_sp(&mut self) -> u8 {
         let val = self.reg_sp;
 
-        let (res, carry) = ((self.reg_h as u16) << 8 + (self.reg_l as u16)).overflowing_add(val);
+        let (res, carry) = (((self.reg_h as u16) << 8) + (self.reg_l as u16)).overflowing_add(val);
 
         self.reg_h = ((res as u16) >> 8) as u8;
         self.reg_l = res as u8;
 
-        self.set_flags_u16(res, carry, false);
+        self.set_flags_u16(res, SetFlag::from(carry), SetFlag::OFF);
 
         2
     }
@@ -399,7 +454,7 @@ impl CPU {
         self.reg_h = ((res as u16) >> 8) as u8;
         self.reg_l = res as u8;
 
-        self.set_flags_u16(res, carry, false);
+        self.set_flags_u16(res, SetFlag::from(carry), SetFlag::OFF);
 
         4
     }
@@ -420,7 +475,7 @@ impl CPU {
 
         self.reg_a &= val;
 
-        self.set_flags_u8(self.reg_a, false, false);
+        self.set_flags_u8(self.reg_a, SetFlag::OFF, SetFlag::LEAVE, SetFlag::OFF);
 
         1
     }
@@ -429,12 +484,12 @@ impl CPU {
         Bitwise AND between the value in address HL and A
      */
     fn and_a_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         self.reg_a &= val;
 
-        self.set_flags_u8(self.reg_a, false, false);
+        self.set_flags_u8(self.reg_a, SetFlag::OFF, SetFlag::LEAVE, SetFlag::OFF);
 
         1
     }
@@ -448,7 +503,7 @@ impl CPU {
 
         self.reg_a &= val;
 
-        self.set_flags_u8(self.reg_a, false, false);
+        self.set_flags_u8(self.reg_a, SetFlag::OFF, SetFlag::LEAVE, SetFlag::OFF);
 
         1
     }
@@ -469,7 +524,7 @@ impl CPU {
 
         let (res, carry) = self.reg_a.overflowing_sub(val);
 
-        self.set_flags_u8(res, carry, true);
+        self.set_flags_u8(res, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::ON);
 
         1
     }
@@ -478,12 +533,12 @@ impl CPU {
         Subtract the value in address HL from A and set the flags but don't store result
      */
     fn cp_a_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let (res, carry) = self.reg_a.overflowing_sub(val);
 
-        self.set_flags_u8(res, carry, true);
+        self.set_flags_u8(res, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::ON);
 
         1
     }
@@ -497,7 +552,7 @@ impl CPU {
 
         let (res, carry) = self.reg_a.overflowing_sub(val);
 
-        self.set_flags_u8(res, carry, true);
+        self.set_flags_u8(res, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::ON);
 
         1
     }
@@ -506,38 +561,31 @@ impl CPU {
         Decrement the value in r8
      */
     fn dec_r8(&mut self, r: R8) -> u8 {
-        let res = match r {
-            R8::A => {
-                self.reg_a = self.reg_a.wrapping_sub(1);
-                self.reg_a
-            }
-            R8::B => {
-                self.reg_b = self.reg_b.wrapping_sub(1);
-                self.reg_b
-            }
-            R8::C => {
-                self.reg_c = self.reg_c.wrapping_sub(1);
-                self.reg_c
-            }
-            R8::D => {
-                self.reg_d = self.reg_d.wrapping_sub(1);
-                self.reg_d
-            }
-            R8::E => {
-                self.reg_e = self.reg_e.wrapping_sub(1);
-                self.reg_e
-            }
-            R8::H => {
-                self.reg_h = self.reg_h.wrapping_sub(1);
-                self.reg_h
-            }
-            R8::L => {
-                self.reg_l = self.reg_l.wrapping_sub(1);
-                self.reg_l
-            }
+        let val = match r {
+            R8::A => self.reg_a,
+            R8::B => self.reg_b,
+            R8::C => self.reg_c,
+            R8::D => self.reg_d,
+            R8::E => self.reg_e,
+            R8::H => self.reg_h,
+            R8::L => self.reg_l,
         };
 
-        self.set_flags_u8(res, false, true);
+        let res = val.wrapping_sub(1);
+
+        let half_carry = ((val&0xf).wrapping_sub(1&0xf) & 0x10) == 0x10;
+
+        self.set_flags_u8(res, SetFlag::LEAVE, SetFlag::from(half_carry), SetFlag::ON);
+
+        match r {
+            R8::A => self.reg_a = res,
+            R8::B => self.reg_b = res,
+            R8::C => self.reg_c = res,
+            R8::D => self.reg_d = res,
+            R8::E => self.reg_e = res,
+            R8::H => self.reg_h = res,
+            R8::L => self.reg_l = res,
+        }
 
         1
     }
@@ -546,14 +594,16 @@ impl CPU {
         Decrement the byte at address HL by 1
      */
     fn dec_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let res = val.wrapping_sub(1);
 
+        let half_carry = ((val&0xf).wrapping_sub(1&0xf) & 0x10) == 0x10;
+
         mmu.wb(addr, res);
 
-        self.set_flags_u8(res, false, true);
+        self.set_flags_u8(res, SetFlag::LEAVE, SetFlag::from(half_carry), SetFlag::ON);
 
         3
     }
@@ -563,9 +613,9 @@ impl CPU {
      */
     fn dec_r16(&mut self, r: R16) -> u8 {
         let val = match r {
-            R16::BC => (self.reg_b as u16) << 8 + (self.reg_c as u16),
-            R16::DE => (self.reg_d as u16) << 8 + (self.reg_e as u16),
-            R16::HL => (self.reg_h as u16) << 8 + (self.reg_l as u16),
+            R16::BC => ((self.reg_b as u16) << 8) + (self.reg_c as u16),
+            R16::DE => ((self.reg_d as u16) << 8) + (self.reg_e as u16),
+            R16::HL => ((self.reg_h as u16) << 8) + (self.reg_l as u16),
         };
 
         let res = val.wrapping_sub(1);
@@ -601,38 +651,31 @@ impl CPU {
         Increment the value in r8
      */
     fn inc_r8(&mut self, r: R8) -> u8 {
-        let res = match r {
-            R8::A => {
-                self.reg_a = self.reg_a.wrapping_add(1);
-                self.reg_a
-            }
-            R8::B => {
-                self.reg_b = self.reg_b.wrapping_add(1);
-                self.reg_b
-            }
-            R8::C => {
-                self.reg_c = self.reg_c.wrapping_add(1);
-                self.reg_c
-            }
-            R8::D => {
-                self.reg_d = self.reg_d.wrapping_add(1);
-                self.reg_d
-            }
-            R8::E => {
-                self.reg_e = self.reg_e.wrapping_add(1);
-                self.reg_e
-            }
-            R8::H => {
-                self.reg_h = self.reg_h.wrapping_add(1);
-                self.reg_h
-            }
-            R8::L => {
-                self.reg_l = self.reg_l.wrapping_add(1);
-                self.reg_l
-            }
+        let val = match r {
+            R8::A => self.reg_a,
+            R8::B => self.reg_b,
+            R8::C => self.reg_c,
+            R8::D => self.reg_d,
+            R8::E => self.reg_e,
+            R8::H => self.reg_h,
+            R8::L => self.reg_l,
         };
 
-        self.set_flags_u8(res, false, false);
+        let res = val.wrapping_add(1);
+
+        let half_carry = ((val&0xf).wrapping_add(1&0xf) & 0x10) == 0x10;
+
+        self.set_flags_u8(res, SetFlag::LEAVE, SetFlag::from(half_carry), SetFlag::OFF);
+
+        match r {
+            R8::A => self.reg_a = res,
+            R8::B => self.reg_b = res,
+            R8::C => self.reg_c = res,
+            R8::D => self.reg_d = res,
+            R8::E => self.reg_e = res,
+            R8::H => self.reg_h = res,
+            R8::L => self.reg_l = res,
+        }
 
         1
     }
@@ -641,14 +684,16 @@ impl CPU {
         Increment the byte at address HL by 1
      */
     fn inc_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let res = val.wrapping_add(1);
 
+        let half_carry = ((val&0xf).wrapping_add(1&0xf) & 0x10) == 0x10;
+
         mmu.wb(addr, res);
 
-        self.set_flags_u8(res, false, false);
+        self.set_flags_u8(res, SetFlag::LEAVE, SetFlag::from(half_carry), SetFlag::OFF);
 
         3
     }
@@ -658,9 +703,9 @@ impl CPU {
      */
     fn inc_r16(&mut self, r: R16) -> u8 {
         let val = match r {
-            R16::BC => (self.reg_b as u16) << 8 + (self.reg_c as u16),
-            R16::DE => (self.reg_d as u16) << 8 + (self.reg_e as u16),
-            R16::HL => (self.reg_h as u16) << 8 + (self.reg_l as u16),
+            R16::BC => ((self.reg_b as u16) << 8) + (self.reg_c as u16),
+            R16::DE => ((self.reg_d as u16) << 8) + (self.reg_e as u16),
+            R16::HL => ((self.reg_h as u16) << 8) + (self.reg_l as u16),
         };
 
         let res = val.wrapping_add(1);
@@ -708,7 +753,7 @@ impl CPU {
 
         self.reg_a |= val;
 
-        self.set_flags_u8(self.reg_a, false, false);
+        self.set_flags_u8(self.reg_a, SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
 
         1
     }
@@ -717,12 +762,12 @@ impl CPU {
         Bitwise OR between the value in address HL and A
      */
     fn or_a_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         self.reg_a |= val;
 
-        self.set_flags_u8(self.reg_a, false, false);
+        self.set_flags_u8(self.reg_a, SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
 
         1
     }
@@ -736,7 +781,7 @@ impl CPU {
 
         self.reg_a |= val;
 
-        self.set_flags_u8(self.reg_a, false, false);
+        self.set_flags_u8(self.reg_a, SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
 
         1
     }
@@ -767,7 +812,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(self.reg_a, carry, true);
+        self.set_flags_u8(self.reg_a, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::ON);
 
         1
     }
@@ -776,7 +821,7 @@ impl CPU {
         Subtract the value in address HL and the carry flag from A
     */
     fn sbc_a_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let (mut res, mut carry) = self.reg_a.overflowing_sub(val);
@@ -789,7 +834,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(self.reg_a, carry, true);
+        self.set_flags_u8(self.reg_a, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::ON);
 
         2
     }
@@ -811,7 +856,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(self.reg_a, carry, true);
+        self.set_flags_u8(self.reg_a, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::ON);
 
         2
     }
@@ -834,7 +879,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(self.reg_a, carry, true);
+        self.set_flags_u8(self.reg_a, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::ON);
 
         1
     }
@@ -843,14 +888,14 @@ impl CPU {
         Subtract the value at address HL from A
      */
     fn sub_a_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let (res, carry) = self.reg_a.overflowing_sub(val);
 
         self.reg_a = res;
 
-        self.set_flags_u8(self.reg_a, carry, true);
+        self.set_flags_u8(self.reg_a, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::ON);
 
         2
     }
@@ -866,7 +911,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(self.reg_a, carry, true);
+        self.set_flags_u8(self.reg_a, SetFlag::from(carry), SetFlag::LEAVE, SetFlag::ON);
 
         2
     }
@@ -887,7 +932,7 @@ impl CPU {
 
         self.reg_a ^= val;
 
-        self.set_flags_u8(self.reg_a, false, false);
+        self.set_flags_u8(self.reg_a, SetFlag::OFF, SetFlag::LEAVE, SetFlag::OFF);
 
         1
     }
@@ -896,12 +941,12 @@ impl CPU {
         Bitwise XOR between the value in address HL and A
      */
     fn xor_a_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         self.reg_a ^= val;
 
-        self.set_flags_u8(self.reg_a, false, false);
+        self.set_flags_u8(self.reg_a, SetFlag::OFF, SetFlag::LEAVE, SetFlag::OFF);
 
         1
     }
@@ -915,7 +960,7 @@ impl CPU {
 
         self.reg_a ^= val;
 
-        self.set_flags_u8(self.reg_a, false, false);
+        self.set_flags_u8(self.reg_a, SetFlag::OFF, SetFlag::LEAVE, SetFlag::OFF);
 
         1
     }
@@ -940,7 +985,7 @@ impl CPU {
             R8::L => self.reg_l,
         };
 
-        self.set_flags_u8(val & u, false, false);
+        self.set_flags_u8(val & u, SetFlag::LEAVE, SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -949,10 +994,10 @@ impl CPU {
         Test the bit u3 in address HL
      */
     fn bit_u3_mhl(&mut self, mmu: &mut MMU, u: u8) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
-        self.set_flags_u8(val & u, false, false);
+        self.set_flags_u8(val & u, SetFlag::LEAVE, SetFlag::LEAVE, SetFlag::OFF);
 
         3
     }
@@ -978,7 +1023,7 @@ impl CPU {
         Reset the bit u3 in address HL
      */
     fn res_u3_mhl(&mut self, mmu: &mut MMU, u: u8) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let res = val & !u;
@@ -1009,7 +1054,7 @@ impl CPU {
         Set the bit u3 in address HL
      */
     fn set_u3_mhl(&mut self, mmu: &mut MMU, u: u8) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let res = val | u;
@@ -1054,7 +1099,7 @@ impl CPU {
             }
         };
 
-        self.set_flags_u8(val, false, false);
+        self.set_flags_u8(val, SetFlag::OFF, SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -1063,14 +1108,14 @@ impl CPU {
         Swap the upper bits with the lower in address HL
      */
     fn swap_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let res = val.rotate_left(4);
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(val, false, false);
+        self.set_flags_u8(val, SetFlag::OFF, SetFlag::LEAVE, SetFlag::OFF);
 
         4
     }
@@ -1114,7 +1159,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -1123,7 +1168,7 @@ impl CPU {
         Rotate byte in memory address HL left through carry
      */
     fn rl_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let carry = self.reg_f & FLAG_CARRY > 0;
@@ -1137,7 +1182,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         4
     }
@@ -1159,7 +1204,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         1 // TODO: This could reuse rl_r8 except it has a different cycle count
     }
@@ -1192,7 +1237,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -1201,7 +1246,7 @@ impl CPU {
         Rotate byte in memory address HL left
      */
     fn rlc_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let new_carry = val & 0x80 > 0;
@@ -1210,7 +1255,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         4
     }
@@ -1227,7 +1272,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         1 // TODO: This could reuse rl_r8 except it has a different cycle count
     }
@@ -1265,7 +1310,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -1274,7 +1319,7 @@ impl CPU {
         Rotate byte in memory address HL right through carry
      */
     fn rr_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let carry = self.reg_f & FLAG_CARRY > 0;
@@ -1288,7 +1333,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         4
     }
@@ -1310,7 +1355,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         1 // TODO: This could reuse rl_r8 except it has a different cycle count
     }
@@ -1343,7 +1388,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -1352,7 +1397,7 @@ impl CPU {
         Rotate byte in memory address HL right
      */
     fn rrc_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let new_carry = val & 1 > 0;
@@ -1361,7 +1406,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         4
     }
@@ -1378,7 +1423,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         1 // TODO: This could reuse rl_r8 except it has a different cycle count
     }
@@ -1411,7 +1456,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -1420,7 +1465,7 @@ impl CPU {
         Shift byte in memory address HL left arithmetically
      */
     fn sla_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let new_carry = val & 0x80 > 0;
@@ -1429,7 +1474,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         4
     }
@@ -1462,7 +1507,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -1471,7 +1516,7 @@ impl CPU {
         Shift byte in memory address HL right arithmetically
      */
     fn sra_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let new_carry = val & 1 > 0;
@@ -1480,7 +1525,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         4
     }
@@ -1513,7 +1558,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         2
     }
@@ -1522,7 +1567,7 @@ impl CPU {
         Shift byte in memory address HL right logically
      */
     fn srl_mhl(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
         let new_carry = val & 1 > 0;
@@ -1531,7 +1576,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(res, new_carry, false);
+        self.set_flags_u8(res, SetFlag::from(new_carry), SetFlag::LEAVE, SetFlag::OFF);
 
         4
     }
@@ -1646,7 +1691,7 @@ impl CPU {
         let val = mmu.rb(self.reg_pc);
         self.reg_pc += 1;
 
-        mmu.wb((self.reg_h as u16) << 8 + (self.reg_l as u16), val);
+        mmu.wb(((self.reg_h as u16) << 8) + (self.reg_l as u16), val);
 
         3
     }
@@ -1655,7 +1700,7 @@ impl CPU {
         Load value at address HL into r8
      */
     fn ld_r8_mhl(&mut self, mmu: &mut MMU, r: R8) -> u8 {
-        let val = mmu.rb((self.reg_h as u16) << 8 + (self.reg_l as u16));
+        let val = mmu.rb(((self.reg_h as u16) << 8) + (self.reg_l as u16));
 
         match r {
             R8::A => self.reg_a = val,
@@ -1677,9 +1722,9 @@ impl CPU {
         let val = self.reg_a;
 
         let addr = match r {
-            R16::BC => (self.reg_b as u16) << 8 + (self.reg_c as u16),
-            R16::DE => (self.reg_d as u16) << 8 + (self.reg_e as u16),
-            R16::HL => (self.reg_h as u16) << 8 + (self.reg_l as u16)
+            R16::BC => ((self.reg_b as u16) << 8) + (self.reg_c as u16),
+            R16::DE => ((self.reg_d as u16) << 8) + (self.reg_e as u16),
+            R16::HL => ((self.reg_h as u16) << 8) + (self.reg_l as u16),
         };
 
         mmu.wb(addr, val);
@@ -1770,7 +1815,7 @@ impl CPU {
     fn ld_hli_a(&mut self, mmu: &mut MMU) -> u8 {
         let val = self.reg_a;
 
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
 
         mmu.wb(addr, val);
 
@@ -1806,7 +1851,7 @@ impl CPU {
         Load value from address at HL into A and increment HL
      */
     fn ld_a_hli(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
 
         self.reg_a = mmu.rb(addr);
 
@@ -1823,7 +1868,7 @@ impl CPU {
         Load value from address at HL into A and decrement HL
      */
     fn ld_a_hld(&mut self, mmu: &mut MMU) -> u8 {
-        let addr = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
 
         self.reg_a = mmu.rb(addr);
 
@@ -1870,7 +1915,7 @@ impl CPU {
         self.reg_h = ((res as u16) >> 8) as u8; //TODO: Replace usages of this with pattern assignment using res.to_le_bytes?
         self.reg_l = res as u8;
 
-        self.set_flags_u16(res, carry, false);
+        self.set_flags_u16(res, SetFlag::from(carry), SetFlag::OFF);
 
         3
     }
@@ -1967,7 +2012,7 @@ impl CPU {
         Jump to address from HL
      */
     fn jp_mhl(&mut self) -> u8 {
-        self.reg_pc = (self.reg_h as u16) << 8 + (self.reg_l as u16);
+        self.reg_pc = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
 
         1
     }
@@ -2006,6 +2051,8 @@ impl CPU {
             self.reg_pc = self.reg_pc.wrapping_add_signed(e8 as i16); // TODO: Should this wrap?
 
             cycles = 3;
+        } else {
+            self.reg_pc += 1;
         }
 
         cycles

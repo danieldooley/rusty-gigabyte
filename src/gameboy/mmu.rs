@@ -1,5 +1,7 @@
 use crate::gameboy::cartridge::Cartridge;
 
+pub const DEBUG_GB_DOCTOR: bool = false;
+
 pub struct MMU {
     // Following: http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-Memory
 
@@ -37,7 +39,7 @@ pub struct MMU {
 
 pub fn new_mmu(cart: Cartridge) -> MMU {
     MMU {
-        in_bios: true,
+        in_bios: !DEBUG_GB_DOCTOR,
         bios: [ // From: http://imrannazar.com/content/files/jsgb.mmu.js
             0x31, 0xFE, 0xFF, 0xAF, 0x21, 0xFF, 0x9F, 0x32, 0xCB, 0x7C, 0x20, 0xFB, 0x21, 0x26, 0xFF, 0x0E,
             0x11, 0x3E, 0x80, 0x32, 0xE2, 0x0C, 0x3E, 0xF3, 0xE2, 0x32, 0x3E, 0x77, 0x77, 0x3E, 0xFC, 0xE0,
@@ -139,7 +141,7 @@ impl MMU {
         Read word
      */
     pub fn rw(&mut self, addr: u16) -> u16 {
-        self.rb(addr) as u16 + ((self.rb(addr) as u16) << 8)
+        self.rb(addr) as u16 + ((self.rb(addr+1) as u16) << 8)
     }
 
     /*
@@ -176,7 +178,7 @@ impl MMU {
                     }
                     0x0E00 => {
                         if addr < 0xFEA0 {
-                            self.s_info[addr as usize - 0xFEFF] = val
+                            self.s_info[addr as usize - 0xFE00] = val
                         }
 
                         // Only 160 bytes should actually be addressable

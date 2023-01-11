@@ -111,13 +111,12 @@ impl GPU {
             Mode::HBlank => {
                 if self.mode_clock >= 204 {
                     // After the last hblank push the screen data to the window
-                    self.sender.send(self.fb.clone()).unwrap(); //TODO: Handle error?
-
                     self.mode_clock = 0;
                     self.line += 1;
 
                     if self.line == 143 {
                         self.mode = Mode::VBlank;
+                        self.sender.send(self.fb.clone()).unwrap(); //TODO: Handle error?
                     } else {
                         self.mode = Mode::ScOam;
                     }
@@ -167,22 +166,20 @@ impl GPU {
 
         // Which line of tiles to use in the map
         map_offs += (((self.line + sc_y) & 255) >> 3) as u16; // TODO: Understand
-        tile_data_offs += (((self.line + sc_y) & 255)) as u16;
 
         // Which tile to start with in the map line
         let mut line_offs = (sc_x >> 3) as u16;
 
         // Which line of pixels to use in the tiles
-        let y = ((self.line + sc_y) & 7);
+        let y = (self.line + sc_y) & 7;
 
         // Where in the tileline to start
-        let mut x = sc_x & 7;
+        let mut x = sc_x & 7; // Get the specific pixel of the tile to grab
 
         // Where to render on the framebuffer
         let fb_offs = ((self.line as u32) * 160 * 3) as usize;
 
         // Read tile index from the background map
-        let colour: u8 = 0;
         let mut tile = mmu.rb(map_offs + line_offs);
 
         // If the tile data set in use is #1 the indices are signed: calculate a real tile offset
@@ -198,9 +195,9 @@ impl GPU {
             let color = self.paletteify(self.tilerow_n_to_color(b1, b2, x));
 
             // Plot the pixel to the framebuffer
-            self.fb[fb_offs + (i * 4) + 0] = color[0];
-            self.fb[fb_offs + (i * 4) + 1] = color[1];
-            self.fb[fb_offs + (i * 4) + 2] = color[2];
+            self.fb[fb_offs + (i * 3) + 0] = color[0];
+            self.fb[fb_offs + (i * 3) + 1] = color[1];
+            self.fb[fb_offs + (i * 3) + 2] = color[2];
 
             x += 1;
             if x == 8 {
