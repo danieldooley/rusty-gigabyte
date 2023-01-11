@@ -1,6 +1,6 @@
 use crate::gameboy::cartridge::Cartridge;
 
-pub const DEBUG_GB_DOCTOR: bool = false;
+pub const DEBUG_GB_DOCTOR: bool = true;
 
 pub struct MMU {
     // Following: http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-Memory
@@ -125,6 +125,10 @@ impl MMU {
                     }
                     0x0F00 => {
                         if addr < 0xFF80 {
+                            if DEBUG_GB_DOCTOR && addr == 0xFF44 {
+                                return 0x90; // GB Doctor setup indicates this should be hardcoded to make it easier to test
+                            }
+
                             return 0; // TODO: Implement IO?
                         }
 
@@ -186,6 +190,7 @@ impl MMU {
                     0x0F00 => {
                         if addr < 0xFF80 {
                             // TODO: Implement IO?
+
                             return;
                         }
 
