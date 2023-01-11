@@ -58,7 +58,7 @@ pub fn start_game_boy(cart: Cartridge, image_sender: Sender<Vec<u8>>) {
 
         if frame_time < target_frame_time {
             sleep(target_frame_time - frame_time)
-        } else {
+        } else if !mmu::DEBUG_GB_DOCTOR {
             eprintln!("slow frame: {}ms", frame_time.as_millis())
         }
     }

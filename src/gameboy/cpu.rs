@@ -242,7 +242,7 @@ impl CPU {
         #########
      */
 
-    fn set_flags_u8(&mut self, zero: SetFlag, carry: SetFlag, half_carry: SetFlag, sub: SetFlag) {
+    fn set_flags(&mut self, zero: SetFlag, carry: SetFlag, half_carry: SetFlag, sub: SetFlag) {
         match zero {
             SetFlag::LEAVE => {}
             SetFlag::ON => self.reg_f |= FLAG_ZERO,
@@ -266,34 +266,6 @@ impl CPU {
             SetFlag::ON => self.reg_f |= FLAG_SUB,
             SetFlag::OFF => self.reg_f &= !FLAG_SUB,
         }
-    }
-
-    fn set_flags_u16(&mut self, zero: SetFlag, carry: SetFlag, half_carry: SetFlag, sub: SetFlag) {
-        match zero {
-            SetFlag::LEAVE => {}
-            SetFlag::ON => self.reg_f |= FLAG_ZERO,
-            SetFlag::OFF => self.reg_f &= !FLAG_ZERO,
-        }
-
-        match carry {
-            SetFlag::LEAVE => {}
-            SetFlag::ON => self.reg_f |= FLAG_CARRY,
-            SetFlag::OFF => self.reg_f &= !FLAG_CARRY,
-        }
-
-        match half_carry {
-            SetFlag::LEAVE => {}
-            SetFlag::ON => self.reg_f |= FLAG_HALF_CARRY,
-            SetFlag::OFF => self.reg_f &= !FLAG_HALF_CARRY,
-        }
-
-        match sub {
-            SetFlag::LEAVE => {}
-            SetFlag::ON => self.reg_f |= FLAG_SUB,
-            SetFlag::OFF => self.reg_f &= !FLAG_SUB,
-        }
-
-        // TODO: Half Carries?
     }
 
     /*
@@ -336,7 +308,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
 
         1
     }
@@ -366,7 +338,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
 
         2
     }
@@ -396,7 +368,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
 
         2
     }
@@ -421,7 +393,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
 
         1
     }
@@ -439,7 +411,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
 
         2
     }
@@ -457,7 +429,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
 
         2
     }
@@ -481,7 +453,7 @@ impl CPU {
         self.reg_h = ((res as u16) >> 8) as u8;
         self.reg_l = res as u8;
 
-        self.set_flags_u16(SetFlag::LEAVE, SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
+        self.set_flags(SetFlag::LEAVE, SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
 
         2
     }
@@ -501,7 +473,7 @@ impl CPU {
         self.reg_h = ((res as u16) >> 8) as u8;
         self.reg_l = res as u8;
 
-        self.set_flags_u16(SetFlag::LEAVE, SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
+        self.set_flags(SetFlag::LEAVE, SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
 
         2
     }
@@ -525,7 +497,7 @@ impl CPU {
 
         self.reg_sp = res;
 
-        self.set_flags_u16(SetFlag::from(res), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
 
         4
     }
@@ -546,7 +518,7 @@ impl CPU {
 
         self.reg_a &= val;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::ON, SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::ON, SetFlag::OFF);
 
         1
     }
@@ -560,7 +532,7 @@ impl CPU {
 
         self.reg_a &= val;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::ON, SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::ON, SetFlag::OFF);
 
         1
     }
@@ -574,7 +546,7 @@ impl CPU {
 
         self.reg_a &= val;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::ON, SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::ON, SetFlag::OFF);
 
         1
     }
@@ -597,7 +569,7 @@ impl CPU {
 
         let half_carry = ((self.reg_a & 0xF).wrapping_sub(val & 0xF) & 0x10) == 0x10;
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
+        self.set_flags(SetFlag::from(res), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
 
         1
     }
@@ -613,7 +585,7 @@ impl CPU {
 
         let half_carry = ((self.reg_a & 0xF).wrapping_sub(val & 0xF) & 0x10) == 0x10;
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
+        self.set_flags(SetFlag::from(res), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
 
         1
     }
@@ -629,7 +601,7 @@ impl CPU {
 
         let half_carry = ((self.reg_a & 0xF).wrapping_sub(val & 0xF) & 0x10) == 0x10;
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
+        self.set_flags(SetFlag::from(res), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
 
         1
     }
@@ -652,7 +624,7 @@ impl CPU {
 
         let half_carry = ((val & 0xF).wrapping_sub(1 & 0xF) & 0x10) == 0x10;
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::LEAVE, SetFlag::from(half_carry), SetFlag::ON);
+        self.set_flags(SetFlag::from(res), SetFlag::LEAVE, SetFlag::from(half_carry), SetFlag::ON);
 
         match r {
             R8::A => self.reg_a = res,
@@ -680,7 +652,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::LEAVE, SetFlag::from(half_carry), SetFlag::ON);
+        self.set_flags(SetFlag::from(res), SetFlag::LEAVE, SetFlag::from(half_carry), SetFlag::ON);
 
         3
     }
@@ -703,8 +675,8 @@ impl CPU {
                 self.reg_c = res as u8;
             }
             R16::DE => {
-                self.reg_h = (res >> 8) as u8;
-                self.reg_l = res as u8;
+                self.reg_d = (res >> 8) as u8;
+                self.reg_e = res as u8;
             }
             R16::HL => {
                 self.reg_h = (res >> 8) as u8;
@@ -742,7 +714,7 @@ impl CPU {
 
         let half_carry = ((val & 0xF).wrapping_add(1 & 0xF) & 0x10) == 0x10;
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::LEAVE, SetFlag::from(half_carry), SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::LEAVE, SetFlag::from(half_carry), SetFlag::OFF);
 
         match r {
             R8::A => self.reg_a = res,
@@ -770,7 +742,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::LEAVE, SetFlag::from(half_carry), SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::LEAVE, SetFlag::from(half_carry), SetFlag::OFF);
 
         3
     }
@@ -830,7 +802,7 @@ impl CPU {
 
         self.reg_a |= val;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
 
         1
     }
@@ -844,7 +816,7 @@ impl CPU {
 
         self.reg_a |= val;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
 
         1
     }
@@ -858,7 +830,7 @@ impl CPU {
 
         self.reg_a |= val;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
 
         1
     }
@@ -897,7 +869,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
 
         1
     }
@@ -927,7 +899,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
 
         2
     }
@@ -955,7 +927,9 @@ impl CPU {
 
         let half_carry = ((self.reg_a & 0xF).wrapping_sub(val & 0xF).wrapping_sub(carry_int) & 0x10) == 0x10;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
+        self.reg_a = res;
+
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
 
         2
     }
@@ -980,7 +954,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
 
         1
     }
@@ -998,7 +972,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
 
         2
     }
@@ -1016,7 +990,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::ON);
 
         2
     }
@@ -1037,7 +1011,7 @@ impl CPU {
 
         self.reg_a ^= val;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
 
         1
     }
@@ -1051,7 +1025,7 @@ impl CPU {
 
         self.reg_a ^= val;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
 
         1
     }
@@ -1065,7 +1039,7 @@ impl CPU {
 
         self.reg_a ^= val;
 
-        self.set_flags_u8(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
 
         1
     }
@@ -1090,7 +1064,7 @@ impl CPU {
             R8::L => self.reg_l,
         };
 
-        self.set_flags_u8(SetFlag::from(val & u), SetFlag::LEAVE, SetFlag::LEAVE, SetFlag::OFF);
+        self.set_flags(SetFlag::from(val & (1 << u)), SetFlag::LEAVE, SetFlag::ON, SetFlag::OFF);
 
         2
     }
@@ -1102,7 +1076,7 @@ impl CPU {
         let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
-        self.set_flags_u8(SetFlag::from(val & u), SetFlag::LEAVE, SetFlag::LEAVE, SetFlag::OFF);
+        self.set_flags(SetFlag::from(val & (1 << u)), SetFlag::LEAVE, SetFlag::ON, SetFlag::OFF);
 
         3
     }
@@ -1112,13 +1086,13 @@ impl CPU {
      */
     fn res_u3_r8(&mut self, u: u8, r: R8) -> u8 {
         match r {
-            R8::A => self.reg_a &= !u,
-            R8::B => self.reg_b &= !u,
-            R8::C => self.reg_c &= !u,
-            R8::D => self.reg_d &= !u,
-            R8::E => self.reg_e &= !u,
-            R8::H => self.reg_h &= !u,
-            R8::L => self.reg_l &= !u,
+            R8::A => self.reg_a &= !(1 <<u),
+            R8::B => self.reg_b &= !(1 <<u),
+            R8::C => self.reg_c &= !(1 <<u),
+            R8::D => self.reg_d &= !(1 <<u),
+            R8::E => self.reg_e &= !(1 <<u),
+            R8::H => self.reg_h &= !(1 <<u),
+            R8::L => self.reg_l &= !(1 <<u),
         };
 
         2
@@ -1131,7 +1105,7 @@ impl CPU {
         let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
-        let res = val & !u;
+        let res = val & !(1 <<u);
 
         mmu.wb(addr, res);
 
@@ -1143,13 +1117,13 @@ impl CPU {
      */
     fn set_u3_r8(&mut self, u: u8, r: R8) -> u8 {
         match r {
-            R8::A => self.reg_a |= u,
-            R8::B => self.reg_b |= u,
-            R8::C => self.reg_c |= u,
-            R8::D => self.reg_d |= u,
-            R8::E => self.reg_e |= u,
-            R8::H => self.reg_h |= u,
-            R8::L => self.reg_l |= u,
+            R8::A => self.reg_a |= (1 <<u),
+            R8::B => self.reg_b |= (1 <<u),
+            R8::C => self.reg_c |= (1 <<u),
+            R8::D => self.reg_d |= (1 <<u),
+            R8::E => self.reg_e |= (1 <<u),
+            R8::H => self.reg_h |= (1 <<u),
+            R8::L => self.reg_l |= (1 <<u),
         };
 
         2
@@ -1162,7 +1136,7 @@ impl CPU {
         let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
-        let res = val | u;
+        let res = val | (1 <<u);
 
         mmu.wb(addr, res);
 
@@ -1204,7 +1178,7 @@ impl CPU {
             }
         };
 
-        self.set_flags_u8(SetFlag::from(val), SetFlag::OFF, SetFlag::LEAVE, SetFlag::OFF);
+        self.set_flags(SetFlag::from(val), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
 
         2
     }
@@ -1220,7 +1194,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(SetFlag::from(val), SetFlag::OFF, SetFlag::LEAVE, SetFlag::OFF);
+        self.set_flags(SetFlag::from(val), SetFlag::OFF, SetFlag::OFF, SetFlag::OFF);
 
         4
     }
@@ -1264,7 +1238,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         2
     }
@@ -1287,7 +1261,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         4
     }
@@ -1309,7 +1283,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::OFF, SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         1 // TODO: This could reuse rl_r8 except it has a different cycle count
     }
@@ -1342,7 +1316,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         2
     }
@@ -1360,7 +1334,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         4
     }
@@ -1377,7 +1351,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::OFF, SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         1 // TODO: This could reuse rl_r8 except it has a different cycle count
     }
@@ -1415,7 +1389,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         2
     }
@@ -1438,7 +1412,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         4
     }
@@ -1460,7 +1434,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::OFF, SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::OFF, SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         1 // TODO: This could reuse rl_r8 except it has a different cycle count
     }
@@ -1493,7 +1467,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         2
     }
@@ -1511,7 +1485,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         4
     }
@@ -1528,7 +1502,7 @@ impl CPU {
 
         self.reg_a = res;
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::OFF, SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         1 // TODO: This could reuse rl_r8 except it has a different cycle count
     }
@@ -1561,7 +1535,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         2
     }
@@ -1579,7 +1553,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         4
     }
@@ -1600,7 +1574,7 @@ impl CPU {
 
         let new_carry = val & 1 > 0;
 
-        let res = (val >> 1) + 0x80;
+        let res = (val >> 1) + (val & 0x80);
 
         match r {
             R8::A => self.reg_a = res,
@@ -1612,7 +1586,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         2
     }
@@ -1626,11 +1600,11 @@ impl CPU {
 
         let new_carry = val & 1 > 0;
 
-        let res = (val >> 1) + 0x80;
+        let res = (val >> 1) + (val & 0x80);
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         4
     }
@@ -1663,7 +1637,7 @@ impl CPU {
             R8::L => self.reg_l = res,
         };
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         2
     }
@@ -1681,7 +1655,7 @@ impl CPU {
 
         mmu.wb(addr, res);
 
-        self.set_flags_u8(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::OFF);
 
         4
     }
@@ -1900,7 +1874,6 @@ impl CPU {
         let val = self.reg_a;
 
         let addr = (self.reg_c as u16) + 0xFF00;
-        self.reg_pc += 1;
 
         mmu.wb(addr, val);
 
@@ -1924,7 +1897,6 @@ impl CPU {
      */
     fn ldh_a_mc(&mut self, mmu: &mut MMU) -> u8 {
         let addr = (self.reg_c as u16) + 0xFF00;
-        self.reg_pc += 1;
 
         self.reg_a = mmu.rb(addr);
 
@@ -2037,7 +2009,7 @@ impl CPU {
         self.reg_h = ((res as u16) >> 8) as u8; //TODO: Replace usages of this with pattern assignment using res.to_le_bytes?
         self.reg_l = res as u8;
 
-        self.set_flags_u16(SetFlag::from(res), SetFlag::from(carry), SetFlag::LEAVE, SetFlag::OFF);
+        self.set_flags(SetFlag::from(res), SetFlag::from(carry), SetFlag::LEAVE, SetFlag::OFF);
 
         3
     }
@@ -2253,7 +2225,7 @@ impl CPU {
         POP register AF from the stack
      */
     fn pop_af(&mut self, mmu: &mut MMU) -> u8 {
-        self.reg_f = mmu.rb(self.reg_sp);
+        self.reg_f = mmu.rb(self.reg_sp) & 0b11110000; // The lower nibble of the flag register appears like it can never be set.
         self.reg_sp += 1;
 
         self.reg_a = mmu.rb(self.reg_sp);
@@ -2349,6 +2321,8 @@ impl CPU {
     fn ccf(&mut self) -> u8 {
         self.reg_f ^= FLAG_CARRY;
 
+        self.set_flags(SetFlag::LEAVE, SetFlag::from((self.reg_f & FLAG_CARRY) != 0),SetFlag::OFF, SetFlag::OFF);
+
         1
     }
 
@@ -2357,6 +2331,8 @@ impl CPU {
      */
     fn cpl(&mut self) -> u8 {
         self.reg_a = !self.reg_a;
+        
+        self.set_flags(SetFlag::LEAVE, SetFlag::LEAVE, SetFlag::ON, SetFlag::ON);
 
         1
     }
@@ -2364,7 +2340,7 @@ impl CPU {
     /*
         Decimal Adjust Accumulator to get a correct BCD representation after an arithmetic instruction.
 
-        TODO: I'm reasonably certian this is to do with the half-carry which imran's implementation doesn't implement.
+        TODO: Implement :joy:
      */
     fn daa(&mut self) -> u8 {
         self.nop()
@@ -2408,7 +2384,7 @@ impl CPU {
         Set carry flag
      */
     fn scf(&mut self) -> u8 {
-        self.reg_f |= FLAG_CARRY;
+        self.set_flags(SetFlag::LEAVE, SetFlag::ON, SetFlag::OFF, SetFlag::OFF);
 
         1
     }
@@ -2498,7 +2474,7 @@ impl CPU {
             0x35 => self.dec_mhl(mmu),
             0x36 => self.ld_mhl_n8(mmu),
             0x37 => self.scf(),
-            0x38 => self.jp_cc_n16(mmu, CC::C),
+            0x38 => self.jr_cc_n16(mmu, CC::C),
             0x39 => self.add_hl_sp(),
             0x3A => self.ld_a_hld(mmu),
             0x3B => self.dec_sp(),
@@ -2641,7 +2617,7 @@ impl CPU {
             0xBC => self.cp_a_r8(R8::H),
             0xBD => self.cp_a_r8(R8::L),
             0xBE => self.cp_a_mhl(mmu),
-            0xBF => self.cp_a_r8(R8::B),
+            0xBF => self.cp_a_r8(R8::A),
 
             0xC0 => self.ret_cc(mmu, CC::NZ),
             0xC1 => self.pop_r16(mmu, R16::BC),
