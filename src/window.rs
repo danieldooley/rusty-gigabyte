@@ -18,7 +18,7 @@ pub fn new_gb_window_handler(receiver: Receiver<Vec<u8>>) -> GBWindowHandler {
 impl WindowHandler for GBWindowHandler {
     fn on_draw(&mut self, helper: &mut WindowHelper, graphics: &mut Graphics2D)
     {
-        match self.receiver.try_recv() {
+        match self.receiver.recv() {
             Ok(fb) => {
                 let image = graphics.create_image_from_raw_pixels(ImageDataType::RGB, ImageSmoothingMode::NearestNeighbor, (160, 144), &fb).unwrap();
 

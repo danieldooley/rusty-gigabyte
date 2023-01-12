@@ -1,6 +1,7 @@
+use std::fs;
 use crate::gameboy::cartridge::Cartridge;
 
-pub const DEBUG_GB_DOCTOR: bool = true;
+pub const DEBUG_GB_DOCTOR: bool = false;
 
 pub struct MMU {
     // Following: http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-Memory
@@ -11,7 +12,7 @@ pub struct MMU {
         When the GB starts up the bios is available in memory region 0x0000-0x00FF. Once the
         bios has been run this region is mapped to the cartridge.
      */
-    in_bios: bool,
+    pub in_bios: bool,
 
     bios: [u8; (0x00FF - 0x0000) + 1], //using this notation to mean addresses 0x0000 -> 0x00FF
 
@@ -19,7 +20,7 @@ pub struct MMU {
     // Bank 0 of the cartridge, this is always available
     rom_bankx: [u8; (0x7FFF - 0x4000) + 1], // The cartridge can contain extra banks that are swapped out with a chip on the cartridge
 
-    g_ram: [u8; (0x9FFF - 0x4000) + 1], // Data for programs and sprites is stored here
+    v_ram: [u8; (0x9FFF - 0x8000) + 1], // Data for programs and sprites is stored here
 
     e_ram: [u8; (0xBFFF - 0xA000) + 1], // Extra (external) ram that may be present on the cartridge
 
@@ -60,7 +61,7 @@ pub fn new_mmu(cart: Cartridge) -> MMU {
         ],
         rom_bank0: cart.read_bank_0(),
         rom_bankx: cart.read_bank_n(),
-        g_ram: [0; 24576],
+        v_ram: [0; 8192],
         e_ram: [0; 8192],
         w_ram: [0; 8192],
         s_info: [0; 160],
@@ -86,8 +87,6 @@ impl MMU {
                 if self.in_bios {
                     if addr < 0x0100 {
                         return self.bios[addr as usize];
-                    } else if addr == 0x0100 {
-                        self.in_bios = false;
                     }
                 }
 
@@ -100,7 +99,7 @@ impl MMU {
                 self.rom_bankx[addr as usize - 0x4000]
             }
             0x8000 | 0x9000 => {
-                self.g_ram[addr as usize - 0x8000]
+                self.v_ram[addr as usize - 0x8000]
             }
             0xA000 | 0xB000 => {
                 self.e_ram[addr as usize - 0xA000]
@@ -129,7 +128,7 @@ impl MMU {
                                 return 0x90; // GB Doctor setup indicates this should be hardcoded to make it easier to test
                             }
 
-                            return 0; // TODO: Implement IO?
+                            return self.mm_io[addr as usize - 0xFF00]
                         }
 
                         self.z_ram[addr as usize - 0xFF80]
@@ -164,7 +163,9 @@ impl MMU {
                 // TODO: Some of this, or bank 0 might be writable with MBC (bank switching)
             }
             0x8000 | 0x9000 => {
-                self.g_ram[addr as usize - 0x8000] = val
+                self.v_ram[addr as usize - 0x8000] = val;
+
+                // fs::write("vram_dump.bin", self.v_ram).unwrap()
             }
             0xA000 | 0xB000 => {
                 self.e_ram[addr as usize - 0xA000] = val
@@ -178,7 +179,7 @@ impl MMU {
             0xF000 => {
                 match addr & 0x0F00 {
                     0x0000..=0x0D00 => {
-                        self.w_ram[addr as usize - 0xF000] = val
+                        self.w_ram[addr as usize - 0xE000] = val
                     }
                     0x0E00 => {
                         if addr < 0xFEA0 {
@@ -189,7 +190,7 @@ impl MMU {
                     }
                     0x0F00 => {
                         if addr < 0xFF80 {
-                            // TODO: Implement IO?
+                            self.mm_io[addr as usize - 0xFF00] = val;
 
                             return;
                         }

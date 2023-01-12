@@ -1,5 +1,5 @@
 use crate::gameboy::mmu;
-use crate::gameboy::mmu::MMU;
+use crate::gameboy::mmu::{MMU};
 
 /*
     Conventions used (from: https://rgbds.gbdev.io/docs/v0.6.0/gbz80.7):
@@ -218,6 +218,11 @@ impl CPU {
         Returns (delta_m, delta_t
      */
     pub fn exec(&mut self, mmu: &mut MMU) -> (u32, u32) {
+        if mmu.in_bios && self.reg_pc == 0x100 {
+            mmu.in_bios = false;
+            println!("finished bios");
+        }
+
         let opc = mmu.rb(self.reg_pc);
 
         if mmu::DEBUG_GB_DOCTOR {

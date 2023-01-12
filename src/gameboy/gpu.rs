@@ -1,6 +1,7 @@
 use std::sync::mpsc::Sender;
 use std::thread::sleep;
 use std::time::Duration;
+
 use crate::gameboy::mmu::MMU;
 
 const REG_LCD_GPU_CONTROL: u16 = 0xFF40;
@@ -57,7 +58,7 @@ pub struct GPU {
     fb: Vec<u8>, // [u8; 160 * 144 * 3], // 3 bytes per pixel (RGB), 160x144 pixels.
 
     // The channel to dispatch the framebuffer on
-    sender: Sender<Vec<u8>>
+    sender: Sender<Vec<u8>>,
 }
 
 pub fn new_gpu(sender: Sender<Vec<u8>>) -> GPU {
@@ -135,15 +136,36 @@ impl GPU {
                 }
             }
         }
+
+        // println!("{}", self.line);
+        mmu.wb(REG_CURR_SCAN_LINE, self.line);
     }
 
-    fn paletteify(&mut self, color: u8) -> [u8; 3] {
-        COLORS[color as usize]
-        //TODO: Palette
+    fn get_palette(&mut self, mmu: &mut MMU) -> [[u8; 3]; 4] {
+        let raw_palette = mmu.rb(REG_BG_PALETTE);
+
+        [
+            COLORS[(raw_palette & 0b00000011) as usize],
+            COLORS[((raw_palette & 0b00001100) >> 2) as usize],
+            COLORS[((raw_palette & 0b00110000) >> 4) as usize],
+            COLORS[((raw_palette & 0b11000000) >> 6) as usize],
+        ]
     }
 
     fn tilerow_n_to_color(&self, b1: u8, b2: u8, n: u8) -> u8 {
-       ((b1 & (1 << n)) >> n) & (((b2 & (1 << n)) >> n) << 1) //TODO: This is a bit gross...
+        // if b1 != 0 || b2 != 0 {
+        //     println!();
+        //
+        //     println!("1 << n : {}", 1 << n);
+        //
+        //     println!("b1 & (1<<n) : {}", (b1 & (1<<n)));
+        //     println!("b2 & (1<<n) : {}", (b2 & (1<<n)));
+        //
+        //     println!("(b1 & (1<<n)) >> n : {}", ((b1 & (1 << n)) >> n));
+        //     println!("((b2 & (1<<n)) >> n) << 1) : {}", (((21 & (1 << n)) >> n) << 1));
+        // }
+
+        ((b1 & (1 << n)) >> n) + (((b2 & (1 << n)) >> n) << 1) //TODO: This is a bit gross...
     }
 
     /*
@@ -151,27 +173,35 @@ impl GPU {
      */
     fn renderscan(&mut self, mmu: &mut MMU) {
         // From: http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-Graphics
+        // println!("line: {}", self.line);
 
         // Store the control flag value for reuse
         let control_flags = mmu.rb(REG_LCD_GPU_CONTROL);
 
+        let palette = self.get_palette(mmu);
+
+        // println!("bg_map: {} bg_tileset: {}", control_flags * FLAG_CONT_BG_MAP >> 3, control_flags & FLAG_CONT_BG_SET >> 4);
+
         // VRAM offsets for the tilemap
         let mut map_offs = if control_flags & FLAG_CONT_BG_MAP == 0 { 0x9800 } else { 0x9C00 };
 
-        let mut tile_data_offs = if control_flags & FLAG_CONT_BG_SET == 0 { 0x8800 } else { 0x8000 };
+        // println!("map_offs: {:#06X}", map_offs);
 
         // Get the scroll values
         let sc_y = mmu.rb(REG_SCROLL_Y);
         let sc_x = mmu.rb(REG_SCROLL_X);
 
         // Which line of tiles to use in the map
-        map_offs += (((self.line + sc_y) & 255) >> 3) as u16; // TODO: Understand
+        map_offs += (((self.line.wrapping_add(sc_y) & 0b11111000 ) as u16) << 2); // TODO: Understand
+
+        // println!("map_offs_line: {:#06X}", map_offs);
 
         // Which tile to start with in the map line
         let mut line_offs = (sc_x >> 3) as u16;
 
+
         // Which line of pixels to use in the tiles
-        let y = (self.line + sc_y) & 7;
+        let y = (self.line.wrapping_add(sc_y)) & 7;
 
         // Where in the tileline to start
         let mut x = sc_x & 7; // Get the specific pixel of the tile to grab
@@ -180,19 +210,31 @@ impl GPU {
         let fb_offs = ((self.line as u32) * 160 * 3) as usize;
 
         // Read tile index from the background map
-        let mut tile = mmu.rb(map_offs + line_offs);
+        let mut tile = mmu.rb(map_offs + line_offs) as u16;
 
-        // If the tile data set in use is #1 the indices are signed: calculate a real tile offset
-        // if control_flags & FLAG_CONT_BG_SET > 0 && tile < 128 {
-        //     tile += 256;
-        // }
+        // If the tile data set in use is #0 the indices are signed: calculate a real tile offset
+        if control_flags & FLAG_CONT_BG_SET == 0 && tile < 128 {
+            tile += 256;
+        }
+
+        // println!("tile: {}", tile);
+
 
         for i in 0..160 {
-            let b1 = mmu.rb(tile_data_offs + (tile as u16));
-            let b2 = mmu.rb(tile_data_offs + (tile as u16) + 1);
+            //println!("line_offs: {:#06X} tile_row_1: {:#06X} tile_row_2: {:#06X}", line_offs, 0x8000 + (tile*16 as u16) + ((y as u16) * 2), 0x8000 + (tile*16 as u16) + ((y as u16) * 2) + 1);
+
+            let b1 = mmu.rb(0x8000 + (tile * 16) + ((y as u16) * 2));
+            let b2 = mmu.rb(0x8000 + (tile * 16) + ((y as u16) * 2) + 1);
+
+            let palette_key = self.tilerow_n_to_color(b1, b2, (7 - x));
 
             // Re-map the tile pixel through the palette
-            let color = self.paletteify(self.tilerow_n_to_color(b1, b2, x));
+            let color = palette[palette_key as usize];
+
+            // if b1 != 0 || b2 != 0 {
+            //     println!("b1: {} b2: {} x: {} pk: {} color: {:?}", b1, b2, x, palette_key, color);
+            //     println!("fb pos: {}", fb_offs + (i * 3))
+            // }
 
             // Plot the pixel to the framebuffer
             self.fb[fb_offs + (i * 3) + 0] = color[0];
@@ -203,11 +245,16 @@ impl GPU {
             if x == 8 {
                 x = 0;
                 line_offs = (line_offs + 1 & 31);
-                tile = mmu.rb(map_offs + line_offs);
-                // if control_flags & FLAG_CONT_BG_SET > 0 && tile < 128 {
-                //     tile += 256;
-                // }
+                // Read tile index from the background map
+                tile = mmu.rb(map_offs + line_offs) as u16;
+
+                // If the tile data set in use is #1 the indices are signed: calculate a real tile offset
+                if control_flags & FLAG_CONT_BG_SET == 0 && tile < 128 {
+                    tile += 256;
+                }
             }
         }
+
+        // println!();
     }
 }

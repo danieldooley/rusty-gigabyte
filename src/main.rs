@@ -13,7 +13,9 @@ mod window;
 mod gameboy;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cart = new_cartridge_from_file("roms/cpu_instrs/individual/11-op a,(hl).gb")?;
+    // let cart = new_cartridge_from_file("roms/cpu_instrs/cpu_instrs.gb")?;
+    let cart = new_cartridge_from_file("roms/opus5.gb")?;
+
 
     let (image_sender, image_receiver) = channel();
 
