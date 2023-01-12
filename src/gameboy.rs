@@ -1,19 +1,23 @@
+use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use std::thread::sleep;
 use std::time::{Duration, SystemTime};
+use speedy2d::window::UserEventSender;
 
 use crate::gameboy::cartridge::Cartridge;
 use crate::gameboy::cpu::new_cpu;
 use crate::gameboy::gpu::new_gpu;
+use crate::gameboy::keys::KeyReg;
 use crate::gameboy::mmu::new_mmu;
 
 pub mod cartridge;
 mod cpu;
 mod mmu;
 mod gpu;
+pub mod keys;
 
-pub fn start_game_boy(cart: Cartridge, image_sender: Sender<Vec<u8>>) {
-    let mut mmu = new_mmu(cart);
+pub fn start_game_boy(cart: Cartridge, image_sender: UserEventSender<Vec<u8>>, key_reg: Arc<KeyReg>) {
+    let mut mmu = new_mmu(cart, key_reg);
 
     let mut cpu = new_cpu();
     let mut gpu = new_gpu(image_sender);

@@ -1,6 +1,7 @@
 use std::sync::mpsc::Sender;
 use std::thread::sleep;
 use std::time::Duration;
+use speedy2d::window::UserEventSender;
 
 use crate::gameboy::mmu::MMU;
 
@@ -58,10 +59,10 @@ pub struct GPU {
     fb: Vec<u8>, // [u8; 160 * 144 * 3], // 3 bytes per pixel (RGB), 160x144 pixels.
 
     // The channel to dispatch the framebuffer on
-    sender: Sender<Vec<u8>>,
+    sender: UserEventSender<Vec<u8>>,
 }
 
-pub fn new_gpu(sender: Sender<Vec<u8>>) -> GPU {
+pub fn new_gpu(sender: UserEventSender<Vec<u8>>) -> GPU {
     GPU {
         mode: Mode::HBlank,
         mode_clock: 0,
@@ -117,7 +118,7 @@ impl GPU {
 
                     if self.line == 143 {
                         self.mode = Mode::VBlank;
-                        self.sender.send(self.fb.clone()).unwrap(); //TODO: Handle error?
+                        self.sender.send_event(self.fb.clone()).unwrap(); //TODO: Handle error?
                     } else {
                         self.mode = Mode::ScOam;
                     }

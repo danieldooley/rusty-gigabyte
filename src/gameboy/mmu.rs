@@ -1,5 +1,7 @@
 use std::fs;
+use std::sync::Arc;
 use crate::gameboy::cartridge::Cartridge;
+use crate::gameboy::keys::KeyReg;
 
 pub const DEBUG_GB_DOCTOR: bool = false;
 
@@ -36,9 +38,11 @@ pub struct MMU {
     // A reference to the connected cartridge
     // TODO: Not sure if this is the right way to implement this
     cart: Cartridge,
+
+    key_reg: Arc<KeyReg>,
 }
 
-pub fn new_mmu(cart: Cartridge) -> MMU {
+pub fn new_mmu(cart: Cartridge, key_reg: Arc<KeyReg>) -> MMU {
     MMU {
         in_bios: !DEBUG_GB_DOCTOR,
         bios: [ // From: http://imrannazar.com/content/files/jsgb.mmu.js
@@ -68,6 +72,7 @@ pub fn new_mmu(cart: Cartridge) -> MMU {
         mm_io: [0; 128],
         z_ram: [0; 128],
         cart,
+        key_reg,
     }
 }
 
@@ -124,6 +129,10 @@ impl MMU {
                     }
                     0x0F00 => {
                         if addr < 0xFF80 {
+                            if addr == 0xFF00 {
+                                return self.key_reg.get_keys()
+                            }
+
                             if DEBUG_GB_DOCTOR && addr == 0xFF44 {
                                 return 0x90; // GB Doctor setup indicates this should be hardcoded to make it easier to test
                             }
@@ -190,6 +199,11 @@ impl MMU {
                     }
                     0x0F00 => {
                         if addr < 0xFF80 {
+                            if addr == 0xFF00 {
+                                self.key_reg.set_column(val);
+                                return;
+                            }
+
                             self.mm_io[addr as usize - 0xFF00] = val;
 
                             return;
