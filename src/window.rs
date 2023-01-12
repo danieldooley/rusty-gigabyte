@@ -5,7 +5,7 @@ use speedy2d::dimen::UVec2;
 use speedy2d::Graphics2D;
 use speedy2d::image::{ImageDataType, ImageSmoothingMode};
 use speedy2d::shape::Rectangle;
-use speedy2d::window::{KeyScancode, VirtualKeyCode, WindowHandler, WindowHelper};
+use speedy2d::window::{KeyScancode, VirtualKeyCode, WindowHandler, WindowHelper, WindowStartupInfo};
 use crate::gameboy::keys::{KeyReg, Keys};
 
 pub struct GBWindowHandler {
@@ -43,6 +43,10 @@ impl GBWindowHandler {
 }
 
 impl WindowHandler<Vec<u8>> for GBWindowHandler {
+    fn on_start(&mut self, helper: &mut WindowHelper<Vec<u8>>, info: WindowStartupInfo) {
+        self.size = *info.viewport_size_pixels();
+    }
+    
     fn on_user_event(&mut self, helper: &mut WindowHelper<Vec<u8>>, user_event: Vec<u8>) {
         self.frame = user_event;
 

@@ -11,6 +11,9 @@ const REG_SCROLL_X: u16 = 0xFF43;
 const REG_CURR_SCAN_LINE: u16 = 0xFF44;
 const REG_BG_PALETTE: u16 = 0xFF47;
 
+const REG_SPR_PALETTE_0: u16 = 0xFF48;
+const REG_SPR_PALETTE_1: u16 = 0xFF49;
+
 const FLAG_CONT_BG_ON: u8 = 0x01;
 const FLAG_CONT_SPR_ON: u8 = 0x02;
 const FLAG_CONT_SPR_SZ: u8 = 0x04;
@@ -23,6 +26,15 @@ const FLAG_CONT_WIN_ON: u8 = 0x20;
 const FLAG_CONT_WIN_TM: u8 = 0x40;
 // #0 when off #1 when on (which window tilemap)
 const FLAG_CONT_DISP_ON: u8 = 0x80;
+
+// #0 when sprite is in foreground, #1 when in background
+const FLAG_SPR_IN_BACKGROUND: u8 = 0x80;
+// #0 normal, #1 Y direction flipped
+const FLAG_SPR_Y_FLIP: u8 = 0x40;
+// #0 normal, #1 X direction flipped
+const FLAG_SPR_X_FLIP: u8 = 0x20;
+// The pallete to be used for the sprite #0 is obj palette 0, #1 is palette 1
+const FLAG_SPR_PALETTE: u8 = 0x10;
 
 const COLORS: [[u8; 3]; 4] = [
     [255, 255, 255], // OFF
@@ -142,8 +154,8 @@ impl GPU {
         mmu.wb(REG_CURR_SCAN_LINE, self.line);
     }
 
-    fn get_palette(&mut self, mmu: &mut MMU) -> [[u8; 3]; 4] {
-        let raw_palette = mmu.rb(REG_BG_PALETTE);
+    fn get_palette(&mut self, mmu: &mut MMU, addr: u16) -> [[u8; 3]; 4] {
+        let raw_palette = mmu.rb(addr);
 
         [
             COLORS[(raw_palette & 0b00000011) as usize],
@@ -154,18 +166,6 @@ impl GPU {
     }
 
     fn tilerow_n_to_color(&self, b1: u8, b2: u8, n: u8) -> u8 {
-        // if b1 != 0 || b2 != 0 {
-        //     println!();
-        //
-        //     println!("1 << n : {}", 1 << n);
-        //
-        //     println!("b1 & (1<<n) : {}", (b1 & (1<<n)));
-        //     println!("b2 & (1<<n) : {}", (b2 & (1<<n)));
-        //
-        //     println!("(b1 & (1<<n)) >> n : {}", ((b1 & (1 << n)) >> n));
-        //     println!("((b2 & (1<<n)) >> n) << 1) : {}", (((21 & (1 << n)) >> n) << 1));
-        // }
-
         ((b1 & (1 << n)) >> n) + (((b2 & (1 << n)) >> n) << 1) //TODO: This is a bit gross...
     }
 
@@ -179,79 +179,161 @@ impl GPU {
         // Store the control flag value for reuse
         let control_flags = mmu.rb(REG_LCD_GPU_CONTROL);
 
-        let palette = self.get_palette(mmu);
+        // Store the scanline to check for sprite behind bg
+        let mut scan_line = [0u8; 160];
 
-        // println!("bg_map: {} bg_tileset: {}", control_flags * FLAG_CONT_BG_MAP >> 3, control_flags & FLAG_CONT_BG_SET >> 4);
+        if control_flags & FLAG_CONT_BG_ON > 0 {
+            let palette = self.get_palette(mmu, REG_BG_PALETTE);
 
-        // VRAM offsets for the tilemap
-        let mut map_offs = if control_flags & FLAG_CONT_BG_MAP == 0 { 0x9800 } else { 0x9C00 };
+            // println!("bg_map: {} bg_tileset: {}", control_flags * FLAG_CONT_BG_MAP >> 3, control_flags & FLAG_CONT_BG_SET >> 4);
 
-        // println!("map_offs: {:#06X}", map_offs);
+            // VRAM offsets for the tilemap
+            let mut map_offs = if control_flags & FLAG_CONT_BG_MAP == 0 { 0x9800 } else { 0x9C00 };
 
-        // Get the scroll values
-        let sc_y = mmu.rb(REG_SCROLL_Y);
-        let sc_x = mmu.rb(REG_SCROLL_X);
+            // println!("map_offs: {:#06X}", map_offs);
 
-        // Which line of tiles to use in the map
-        map_offs += (((self.line.wrapping_add(sc_y) & 0b11111000 ) as u16) << 2); // TODO: Understand
+            // Get the scroll values
+            let sc_y = mmu.rb(REG_SCROLL_Y);
+            let sc_x = mmu.rb(REG_SCROLL_X);
 
-        // println!("map_offs_line: {:#06X}", map_offs);
+            // Which line of tiles to use in the map
+            map_offs += (((self.line.wrapping_add(sc_y) & 0b11111000) as u16) << 2); // TODO: Understand
 
-        // Which tile to start with in the map line
-        let mut line_offs = (sc_x >> 3) as u16;
+            // println!("map_offs_line: {:#06X}", map_offs);
+
+            // Which tile to start with in the map line
+            let mut line_offs = (sc_x >> 3) as u16;
 
 
-        // Which line of pixels to use in the tiles
-        let y = (self.line.wrapping_add(sc_y)) & 7;
+            // Which line of pixels to use in the tiles
+            let y = (self.line.wrapping_add(sc_y)) & 7;
 
-        // Where in the tileline to start
-        let mut x = sc_x & 7; // Get the specific pixel of the tile to grab
+            // Where in the tileline to start
+            let mut x = sc_x & 7; // Get the specific pixel of the tile to grab
 
-        // Where to render on the framebuffer
-        let fb_offs = ((self.line as u32) * 160 * 3) as usize;
+            // Where to render on the framebuffer
+            let fb_offs = ((self.line as u32) * 160 * 3) as usize;
 
-        // Read tile index from the background map
-        let mut tile = mmu.rb(map_offs + line_offs) as u16;
+            // Read tile index from the background map
+            let mut tile = mmu.rb(map_offs + line_offs) as u16;
 
-        // If the tile data set in use is #0 the indices are signed: calculate a real tile offset
-        if control_flags & FLAG_CONT_BG_SET == 0 && tile < 128 {
-            tile += 256;
+            // If the tile data set in use is #0 the indices are signed: calculate a real tile offset
+            if control_flags & FLAG_CONT_BG_SET == 0 && tile < 128 {
+                tile += 256;
+            }
+
+            // println!("tile: {}", tile);
+
+
+            for i in 0..160 {
+                //println!("line_offs: {:#06X} tile_row_1: {:#06X} tile_row_2: {:#06X}", line_offs, 0x8000 + (tile*16 as u16) + ((y as u16) * 2), 0x8000 + (tile*16 as u16) + ((y as u16) * 2) + 1);
+
+                let b1 = mmu.rb(0x8000 + (tile * 16) + ((y as u16) * 2));
+                let b2 = mmu.rb(0x8000 + (tile * 16) + ((y as u16) * 2) + 1);
+
+                let palette_key = self.tilerow_n_to_color(b1, b2, (7 - x));
+
+                scan_line[i] = palette_key;
+
+                // Re-map the tile pixel through the palette
+                let color = palette[palette_key as usize];
+
+                // if b1 != 0 || b2 != 0 {
+                //     println!("b1: {} b2: {} x: {} pk: {} color: {:?}", b1, b2, x, palette_key, color);
+                //     println!("fb pos: {}", fb_offs + (i * 3))
+                // }
+
+                // Plot the pixel to the framebuffer
+                self.fb[fb_offs + (i * 3) + 0] = color[0];
+                self.fb[fb_offs + (i * 3) + 1] = color[1];
+                self.fb[fb_offs + (i * 3) + 2] = color[2];
+
+                x += 1;
+                if x == 8 {
+                    x = 0;
+                    line_offs = (line_offs + 1 & 31);
+                    // Read tile index from the background map
+                    tile = mmu.rb(map_offs + line_offs) as u16;
+
+                    // If the tile data set in use is #1 the indices are signed: calculate a real tile offset
+                    if control_flags & FLAG_CONT_BG_SET == 0 && tile < 128 {
+                        tile += 256;
+                    }
+                }
+            }
         }
 
-        // println!("tile: {}", tile);
+        if control_flags & FLAG_CONT_SPR_ON > 0 {
 
+            for i in 0..40 {
 
-        for i in 0..160 {
-            //println!("line_offs: {:#06X} tile_row_1: {:#06X} tile_row_2: {:#06X}", line_offs, 0x8000 + (tile*16 as u16) + ((y as u16) * 2), 0x8000 + (tile*16 as u16) + ((y as u16) * 2) + 1);
+                // Get sprite
+                let sprite = [
+                    mmu.rb(0xFE00 + (i * 4) + 0), // Y Position
+                    mmu.rb(0xFE00 + (i * 4) + 1), // X Position
+                    mmu.rb(0xFE00 + (i * 4) + 2), // Tile Number
+                    mmu.rb(0xFE00 + (i * 4) + 3), // Flags
+                ];
 
-            let b1 = mmu.rb(0x8000 + (tile * 16) + ((y as u16) * 2));
-            let b2 = mmu.rb(0x8000 + (tile * 16) + ((y as u16) * 2) + 1);
+                // Sprites can be moved off the top or left of the screen so are stored with a value that starts at -16/-8
+                let sp_y = sprite[0] as i16 - 16;
+                let sp_x = sprite[1] as i16 - 8;
 
-            let palette_key = self.tilerow_n_to_color(b1, b2, (7 - x));
+                // Check if the sprite intersects the scanline
+                if sp_y <= (self.line as i16) && sp_y + 8 > (self.line as i16) {
 
-            // Re-map the tile pixel through the palette
-            let color = palette[palette_key as usize];
+                    // Get palette
+                    let palette= if sprite[3] & FLAG_SPR_PALETTE == 0 {
+                        self.get_palette(mmu, REG_SPR_PALETTE_0)
+                    } else {
+                        self.get_palette(mmu, REG_SPR_PALETTE_1)
+                    };
 
-            // if b1 != 0 || b2 != 0 {
-            //     println!("b1: {} b2: {} x: {} pk: {} color: {:?}", b1, b2, x, palette_key, color);
-            //     println!("fb pos: {}", fb_offs + (i * 3))
-            // }
+                    // Where to render on the framebuffer
+                    let fb_offs = (((self.line as i32) * 160 + (sp_x as i32)) * 3) as usize;
 
-            // Plot the pixel to the framebuffer
-            self.fb[fb_offs + (i * 3) + 0] = color[0];
-            self.fb[fb_offs + (i * 3) + 1] = color[1];
-            self.fb[fb_offs + (i * 3) + 2] = color[2];
+                    let tile = sprite[2] as u16;
 
-            x += 1;
-            if x == 8 {
-                x = 0;
-                line_offs = (line_offs + 1 & 31);
-                // Read tile index from the background map
-                tile = mmu.rb(map_offs + line_offs) as u16;
+                    // Calculate which line of the tile is being drawn
+                    let y = if sprite[3] & FLAG_SPR_Y_FLIP == 0 {
+                        (self.line as i16) - sp_y
+                    } else {
+                        7 - ((self.line as i16) - sp_y)
+                    } as u16;
 
-                // If the tile data set in use is #1 the indices are signed: calculate a real tile offset
-                if control_flags & FLAG_CONT_BG_SET == 0 && tile < 128 {
-                    tile += 256;
+                    // Get the tile row bytes
+                    let b1 = mmu.rb(0x8000 + (tile * 16) + (y * 2));
+                    let b2 = mmu.rb(0x8000 + (tile * 16) + (y * 2) + 1);
+
+                    for i in 0..8 { // For the 8 x pixels of the tile
+
+                        // Check that this pixel is on the screen
+                        if (sp_x + i) >= 0 && (sp_x + i) < 160 {
+
+                            // Get x value
+                            let x = if sprite[3] & FLAG_SPR_X_FLIP == 0 {
+                                (7 - i) as u8
+                            } else {
+                                i as u8
+                            };
+
+                            // Get pixel
+                            let palette_key = self.tilerow_n_to_color(b1, b2, x);
+
+                            // Write if not transparent or not covered by background
+                            if (sprite[3] & FLAG_SPR_IN_BACKGROUND == 0) && palette_key != 0 ||
+                                (sprite[3] & FLAG_SPR_IN_BACKGROUND > 0) && scan_line[(sp_x + i) as usize] == 0 {
+                                // Get color
+                                let color = palette[palette_key as usize];
+
+                                // Plot the pixel to the framebuffer
+                                self.fb[fb_offs + ((i * 3) + 0) as usize] = color[0];
+                                self.fb[fb_offs + ((i * 3) + 1) as usize] = color[1];
+                                self.fb[fb_offs + ((i * 3) + 2) as usize] = color[2];
+                            }
+                        }
+
+                    }
                 }
             }
         }
