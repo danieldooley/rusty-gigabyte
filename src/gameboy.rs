@@ -60,10 +60,12 @@ pub fn start_game_boy(cart: Cartridge, image_sender: UserEventSender<Vec<u8>>, k
 
         let frame_time = SystemTime::now().duration_since(start).unwrap();
 
-        if frame_time < target_frame_time {
-            sleep(target_frame_time - frame_time)
-        } else if !mmu::DEBUG_GB_DOCTOR {
-            eprintln!("slow frame: {}ms", frame_time.as_millis())
+        if !mmu::DEBUG_GB_DOCTOR { // If debugging, gotta go fast
+            if frame_time < target_frame_time {
+                sleep(target_frame_time - frame_time)
+            } else {
+                eprintln!("slow frame: {}ms", frame_time.as_millis())
+            }
         }
     }
 }

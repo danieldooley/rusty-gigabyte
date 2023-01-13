@@ -1,5 +1,5 @@
 use crate::gameboy::mmu;
-use crate::gameboy::mmu::{MMU};
+use crate::gameboy::mmu::MMU;
 
 /*
     Conventions used (from: https://rgbds.gbdev.io/docs/v0.6.0/gbz80.7):
@@ -45,7 +45,7 @@ enum CC {
 }
 
 enum RST {
-    // The call reference at RGBDS only defines RST00..RST38 but the code at http://imrannazar.com/content/files/jsgb.z80.js goes to RST60
+    // Below are handled as normal opcodes
     RST00,
     RST08,
     RST10,
@@ -54,21 +54,12 @@ enum RST {
     RST28,
     RST30,
     RST38,
-}
-
-impl Into<u16> for RST {
-    fn into(self) -> u16 {
-        match self {
-            RST::RST00 => 0x00,
-            RST::RST08 => 0x08,
-            RST::RST10 => 0x10,
-            RST::RST18 => 0x18,
-            RST::RST20 => 0x20,
-            RST::RST28 => 0x28,
-            RST::RST30 => 0x30,
-            RST::RST38 => 0x38,
-        }
-    }
+    // Below are used for interrupts
+    RST40,
+    RST48,
+    RST50,
+    RST58,
+    RST60,
 }
 
 enum SetFlag {
@@ -113,6 +104,14 @@ const FLAG_ZERO: u8 = 0x80;
 const FLAG_SUB: u8 = 0x40;
 const FLAG_HALF_CARRY: u8 = 0x20;
 const FLAG_CARRY: u8 = 0x10;
+
+pub const FLAG_INT_VBLANK: u8 = 0x01;
+pub const FLAG_INT_LCD_STAT: u8 = 0x02;
+pub const FLAG_INT_TIMER: u8 = 0x04;
+pub const FLAG_INT_SERIAL: u8 = 0x08;
+pub const FLAG_INT_JOYP: u8 = 0x10;
+
+pub const REG_INTERRUPTS: u16 = 0xFF0F;
 
 pub struct CPU {
     // clocks
@@ -162,7 +161,7 @@ pub fn new_cpu() -> CPU {
             reg_l: 0x4D,
             reg_pc: 0x0100,
             reg_sp: 0xFFFE,
-            ime: false,
+            ime: true,
             halt: false,
             stop: false,
         }
@@ -180,7 +179,7 @@ pub fn new_cpu() -> CPU {
             reg_l: 0,
             reg_pc: 0,
             reg_sp: 0,
-            ime: false,
+            ime: true,
             halt: false,
             stop: false,
         }
@@ -189,30 +188,6 @@ pub fn new_cpu() -> CPU {
 
 impl CPU {
     /*
-        Reset the CPU to its initial state
-     */
-    pub fn reset(&mut self) {
-        self.clock_m = 0;
-        self.clock_t = 0;
-
-        self.reg_a = 0;
-        self.reg_b = 0;
-        self.reg_c = 0;
-        self.reg_d = 0;
-        self.reg_e = 0;
-        self.reg_f = 0;
-        self.reg_h = 0;
-        self.reg_l = 0;
-
-        self.reg_pc = 0;
-        self.reg_sp = 0;
-
-        self.ime = false;
-        self.halt = false;
-        self.stop = false;
-    }
-
-    /*
         Execute the next CPU operation
 
         Returns (delta_m, delta_t
@@ -220,7 +195,6 @@ impl CPU {
     pub fn exec(&mut self, mmu: &mut MMU) -> (u32, u32) {
         if mmu.in_bios && self.reg_pc == 0x100 {
             mmu.in_bios = false;
-            println!("finished bios");
         }
 
         let opc = mmu.rb(self.reg_pc);
@@ -232,8 +206,42 @@ impl CPU {
 
         self.reg_pc = self.reg_pc.wrapping_add(1);
 
-        let cycles = self.map_and_execute(mmu, opc) as u32;
-        let cycles_t = cycles * 4;
+        let mut cycles = self.map_and_execute(mmu, opc) as u32;
+        let mut cycles_t = cycles * 4;
+
+        // If global interrupts are enabled
+        if self.ime {
+            let i_e = mmu.rb(0xFFFF); // Individual interrupts enabled
+            let i_f = mmu.rb(REG_INTERRUPTS); // Which interrupts have occurred
+
+            if i_e & i_f > 0 { // If any enabled interrupts have ocurred
+                if i_e & i_f & FLAG_INT_VBLANK > 0 {
+                    println!("VBLANK!");
+                    mmu.wb(REG_INTERRUPTS, i_f & !FLAG_INT_VBLANK); // reset the flag
+                    self.ime = false;
+                    self.rst(mmu, RST::RST40); // Execute the RST op
+                } else if i_e & i_f & FLAG_INT_LCD_STAT > 0 {
+                    mmu.wb(REG_INTERRUPTS, i_f & !FLAG_INT_LCD_STAT); // reset the flag
+                    self.ime = false;
+                    self.rst(mmu, RST::RST48); // Execute the RST op
+                } else if i_e & i_f & FLAG_INT_TIMER > 0 {
+                    mmu.wb(REG_INTERRUPTS, i_f & !FLAG_INT_TIMER); // reset the flag
+                    self.ime = false;
+                    self.rst(mmu, RST::RST50); // Execute the RST op
+                } else if i_e & i_f & FLAG_INT_SERIAL > 0 {
+                    mmu.wb(REG_INTERRUPTS, i_f & !FLAG_INT_SERIAL); // reset the flag
+                    self.ime = false;
+                    self.rst(mmu, RST::RST58); // Execute the RST op
+                } else if i_e & i_f & FLAG_INT_JOYP > 0 {
+                    mmu.wb(REG_INTERRUPTS, i_f & !FLAG_INT_JOYP); // reset the flag
+                    self.ime = false;
+                    self.rst(mmu, RST::RST60); // Execute the RST op
+                }
+
+                cycles += 5;
+                cycles_t += 20;
+            }
+        }
 
         self.clock_m = self.clock_m.wrapping_add(cycles);
         self.clock_t = self.clock_m.wrapping_add(cycles_t);
@@ -487,22 +495,21 @@ impl CPU {
         Add the signed value e8 to SP
      */
     fn add_sp_e8(&mut self, mmu: &mut MMU) -> u8 {
-        let e8 = mmu.rb(self.reg_pc) as i8;
+        let raw_val = mmu.rb(self.reg_pc);
         self.reg_pc += 1;
 
-        let (res, carry) = self.reg_sp.overflowing_add_signed(e8 as i16);
+        let res = self.reg_sp.wrapping_add_signed((raw_val as i8) as i16);
 
-        let mut half_carry = false;
+        /*
+            half_carry and carry are a little odd here. It carries as if it were an unsigned 8bit addition...
+         */
+        let (_, carry) = ((self.reg_sp & 0xFF) as u8).overflowing_add(raw_val);
 
-        if e8 >= 0 {
-            half_carry = ((self.reg_sp & 0xFFF).wrapping_add(((e8.abs() as u16) & 0xFFF) & 0x1000) == 0x1000);
-        } else {
-            half_carry = ((self.reg_sp & 0xFFF).wrapping_sub(((e8.abs() as u16) & 0xFFF) & 0x1000) == 0x1000);
-        }
+        let half_carry = (((self.reg_sp & 0xF) as u8).wrapping_add(raw_val & 0xF)) & 0x10 == 0x10;
 
         self.reg_sp = res;
 
-        self.set_flags(SetFlag::from(res), SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
+        self.set_flags(SetFlag::OFF, SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
 
         4
     }
@@ -1091,13 +1098,13 @@ impl CPU {
      */
     fn res_u3_r8(&mut self, u: u8, r: R8) -> u8 {
         match r {
-            R8::A => self.reg_a &= !(1 <<u),
-            R8::B => self.reg_b &= !(1 <<u),
-            R8::C => self.reg_c &= !(1 <<u),
-            R8::D => self.reg_d &= !(1 <<u),
-            R8::E => self.reg_e &= !(1 <<u),
-            R8::H => self.reg_h &= !(1 <<u),
-            R8::L => self.reg_l &= !(1 <<u),
+            R8::A => self.reg_a &= !(1 << u),
+            R8::B => self.reg_b &= !(1 << u),
+            R8::C => self.reg_c &= !(1 << u),
+            R8::D => self.reg_d &= !(1 << u),
+            R8::E => self.reg_e &= !(1 << u),
+            R8::H => self.reg_h &= !(1 << u),
+            R8::L => self.reg_l &= !(1 << u),
         };
 
         2
@@ -1110,7 +1117,7 @@ impl CPU {
         let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
-        let res = val & !(1 <<u);
+        let res = val & !(1 << u);
 
         mmu.wb(addr, res);
 
@@ -1122,13 +1129,13 @@ impl CPU {
      */
     fn set_u3_r8(&mut self, u: u8, r: R8) -> u8 {
         match r {
-            R8::A => self.reg_a |= (1 <<u),
-            R8::B => self.reg_b |= (1 <<u),
-            R8::C => self.reg_c |= (1 <<u),
-            R8::D => self.reg_d |= (1 <<u),
-            R8::E => self.reg_e |= (1 <<u),
-            R8::H => self.reg_h |= (1 <<u),
-            R8::L => self.reg_l |= (1 <<u),
+            R8::A => self.reg_a |= (1 << u),
+            R8::B => self.reg_b |= (1 << u),
+            R8::C => self.reg_c |= (1 << u),
+            R8::D => self.reg_d |= (1 << u),
+            R8::E => self.reg_e |= (1 << u),
+            R8::H => self.reg_h |= (1 << u),
+            R8::L => self.reg_l |= (1 << u),
         };
 
         2
@@ -1141,7 +1148,7 @@ impl CPU {
         let addr = ((self.reg_h as u16) << 8) + (self.reg_l as u16);
         let val = mmu.rb(addr);
 
-        let res = val | (1 <<u);
+        let res = val | (1 << u);
 
         mmu.wb(addr, res);
 
@@ -2006,15 +2013,22 @@ impl CPU {
         Add the signed value e8 to SP and store in HL
      */
     fn ld_hl_spe8(&mut self, mmu: &mut MMU) -> u8 {
-        let e8 = mmu.rb(self.reg_pc) as i8;
+        let raw_val = mmu.rb(self.reg_pc);
         self.reg_pc += 1;
 
-        let (res, carry) = self.reg_sp.overflowing_add_signed(e8 as i16);
+        let res = self.reg_sp.wrapping_add_signed((raw_val as i8) as i16);
+
+        /*
+            half_carry and carry are a little odd here. It carries as if it were an unsigned 8bit addition...
+         */
+        let (_, carry) = ((self.reg_sp & 0xFF) as u8).overflowing_add(raw_val);
+
+        let half_carry = (((self.reg_sp & 0xF) as u8).wrapping_add(raw_val & 0xF)) & 0x10 == 0x10;
 
         self.reg_h = ((res as u16) >> 8) as u8; //TODO: Replace usages of this with pattern assignment using res.to_le_bytes?
         self.reg_l = res as u8;
 
-        self.set_flags(SetFlag::from(res), SetFlag::from(carry), SetFlag::LEAVE, SetFlag::OFF);
+        self.set_flags(SetFlag::OFF, SetFlag::from(carry), SetFlag::from(half_carry), SetFlag::OFF);
 
         3
     }
@@ -2210,10 +2224,25 @@ impl CPU {
      */
     fn rst(&mut self, mmu: &mut MMU, addr: RST) -> u8 {
         self.reg_sp -= 2; // Next stack position?
+        mmu.ww(self.reg_sp, self.reg_pc); // Address of instruction after the CALL onto stack
 
-        mmu.ww(self.reg_sp, self.reg_pc + 2); // Address of instruction after the CALL onto stack
+        let x = match addr {
+            RST::RST00 => 0x00,
+            RST::RST08 => 0x08,
+            RST::RST10 => 0x10,
+            RST::RST18 => 0x18,
+            RST::RST20 => 0x20,
+            RST::RST28 => 0x28,
+            RST::RST30 => 0x30,
+            RST::RST38 => 0x38,
+            RST::RST40 => 0x40,
+            RST::RST48 => 0x48,
+            RST::RST50 => 0x50,
+            RST::RST58 => 0x58,
+            RST::RST60 => 0x60,
+        };
 
-        self.reg_pc = addr as u16;
+        self.reg_pc = x;
 
         4
     }
@@ -2326,7 +2355,7 @@ impl CPU {
     fn ccf(&mut self) -> u8 {
         self.reg_f ^= FLAG_CARRY;
 
-        self.set_flags(SetFlag::LEAVE, SetFlag::from((self.reg_f & FLAG_CARRY) != 0),SetFlag::OFF, SetFlag::OFF);
+        self.set_flags(SetFlag::LEAVE, SetFlag::from((self.reg_f & FLAG_CARRY) != 0), SetFlag::OFF, SetFlag::OFF);
 
         1
     }
@@ -2336,7 +2365,7 @@ impl CPU {
      */
     fn cpl(&mut self) -> u8 {
         self.reg_a = !self.reg_a;
-        
+
         self.set_flags(SetFlag::LEAVE, SetFlag::LEAVE, SetFlag::ON, SetFlag::ON);
 
         1
@@ -2344,11 +2373,49 @@ impl CPU {
 
     /*
         Decimal Adjust Accumulator to get a correct BCD representation after an arithmetic instruction.
-
-        TODO: Implement :joy:
      */
     fn daa(&mut self) -> u8 {
-        self.nop()
+        // From: https://forums.nesdev.org/viewtopic.php?t=15944
+
+        let carry = self.reg_f & FLAG_CARRY > 0;
+        let half_carry = self.reg_f & FLAG_HALF_CARRY > 0;
+
+        let mut new_carry = carry;
+
+        /*
+            // note: assumes a is a uint8_t and wraps from 0xff to 0
+            if (!n_flag) {  // after an addition, adjust if (half-)carry occurred or if result is out of bounds
+              if (c_flag || a > 0x99) { a += 0x60; c_flag = 1; }
+              if (h_flag || (a & 0x0f) > 0x09) { a += 0x6; }
+            } else {  // after a subtraction, only adjust if (half-)carry occurred
+              if (c_flag) { a -= 0x60; }
+              if (h_flag) { a -= 0x6; }
+            }
+            // these flags are always updated
+            z_flag = (a == 0); // the usual z flag
+            h_flag = 0; // h flag is always cleared
+         */
+
+        if self.reg_f & FLAG_SUB == 0 { // after an addition, adjust if (half-) carry occurred or if result is out of bounds
+            if carry || self.reg_a > 0x99 {
+                self.reg_a = self.reg_a.wrapping_add(0x60);
+                new_carry = true;
+            }
+            if half_carry || (self.reg_a & 0x0F) > 0x09 {
+                self.reg_a = self.reg_a.wrapping_add(0x6);
+            }
+        } else { // after a subtraction, only adjust if (half-)carry occurred
+            if carry {
+                self.reg_a = self.reg_a.wrapping_sub(0x60);
+            }
+            if half_carry {
+                self.reg_a = self.reg_a.wrapping_sub(0x6);
+            }
+        };
+
+        self.set_flags(SetFlag::from(self.reg_a), SetFlag::from(new_carry), SetFlag::OFF, SetFlag::LEAVE);
+
+        1
     }
 
     /*

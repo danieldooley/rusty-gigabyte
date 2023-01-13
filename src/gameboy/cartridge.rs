@@ -10,6 +10,12 @@ pub fn new_cartridge_from_file(path: &str) -> Result<Cartridge, io::Error> {
     Ok(Cartridge { file })
 }
 
+pub fn new_cartridge_from_url(path: &str) -> Result<Cartridge, reqwest::Error> {
+    let file = Vec::<u8>::from(reqwest::blocking::get(path)?.bytes()?);
+
+    Ok(Cartridge { file })
+}
+
 
 impl Cartridge {
     pub fn read_bank_0(&self) -> [u8; 16384] {

@@ -2,6 +2,7 @@ use std::sync::mpsc::Sender;
 use std::thread::sleep;
 use std::time::Duration;
 use speedy2d::window::UserEventSender;
+use crate::gameboy::cpu;
 
 use crate::gameboy::mmu::MMU;
 
@@ -130,6 +131,11 @@ impl GPU {
 
                     if self.line == 143 {
                         self.mode = Mode::VBlank;
+
+                        // Send the vblank interrupt
+                        let i_f = mmu.rb(cpu::REG_INTERRUPTS);
+                        mmu.wb(cpu::REG_INTERRUPTS, i_f | cpu::FLAG_INT_VBLANK);
+
                         self.sender.send_event(self.fb.clone()).unwrap(); //TODO: Handle error?
                     } else {
                         self.mode = Mode::ScOam;
